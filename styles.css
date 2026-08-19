@@ -61,6 +61,19 @@ html, body {
 
 #add-column-form button:hover { background: #1a8cd8; }
 
+#compose-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid #38444d;
+  background: transparent;
+  color: #e7e9ea;
+  cursor: pointer;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#compose-btn:hover { background: #2c3640; }
+
 #columns {
   display: flex;
   align-items: stretch;
@@ -147,7 +160,7 @@ html, body {
 .column-buttons button:hover { background: #2c3640; color: #e7e9ea; }
 
 .column-settings {
-  display: flex;
+  display: none;
   gap: 14px;
   padding: 6px 10px;
   background: #1c2733;
@@ -155,6 +168,10 @@ html, body {
   font-size: 12px;
   color: #8b98a5;
   flex: 0 0 auto;
+}
+
+.column-settings:not([hidden]) {
+  display: flex;
 }
 
 .column-settings label {

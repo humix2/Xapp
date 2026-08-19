@@ -31,10 +31,18 @@ div[data-testid="primaryColumn"] > div > div:has(input[data-testid="SearchBox_Se
 
 /* Note: the "話題のポスト/最新/ユーザー/メディア" (Top/Latest/People/Media) tab
    bar and the home timeline's "おすすめ/フォロー中" (For you/Following) tab bar
-   share the same data-testid="ScrollSnap-List". Search/trends columns should
-   hide it (the app's own sort dropdown covers it), but home columns need it
-   visible so "フォロー中" can be selected — so that rule lives in renderer.js
-   (TAB_BAR_HIDE_CSS), applied per column type, instead of here. */
+   share the same data-testid="ScrollSnap-List", so hiding it lives in
+   renderer.js (TAB_BAR_HIDE_CSS) applied to every column. Home columns
+   auto-select "フォロー中" on load (ENSURE_FOLLOWING_JS) before it's hidden. */
+
+/* Inline "いまどうしてる？/What's happening?" post composer on the home
+   timeline. This app is read-only by design (posting is done through the
+   separate "✎ ポストする" popup), so it's hidden to leave more room for the
+   timeline. Scoped to a wrapper that contains the composer but not any
+   <article> (a tweet), so the timeline itself is never matched/hidden. */
+div[data-testid="primaryColumn"] div:has([data-testid="tweetTextarea_0"]):not(:has(article)) {
+  display: none !important;
+}
 
 /* Let the timeline take the full column width instead of the centered
    fixed-width layout X uses when the side columns are present */

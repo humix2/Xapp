@@ -44,6 +44,35 @@ function createWindow() {
   mainWindow.loadFile('index.html');
 }
 
+let composeWindow = null;
+
+function openComposeWindow() {
+  if (composeWindow && !composeWindow.isDestroyed()) {
+    composeWindow.focus();
+    return;
+  }
+  composeWindow = new BrowserWindow({
+    width: 600,
+    height: 650,
+    backgroundColor: '#15202b',
+    parent: mainWindow,
+    title: 'ポストする',
+    webPreferences: {
+      partition: 'persist:xsession',
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  composeWindow.setMenuBarVisibility(false);
+  composeWindow.loadURL('https://x.com/compose/post');
+  composeWindow.webContents.on('dom-ready', () => {
+    composeWindow.webContents.insertCSS(readInjectCss()).catch(() => {});
+  });
+  composeWindow.on('closed', () => {
+    composeWindow = null;
+  });
+}
+
 app.whenReady().then(() => {
   createWindow();
 
@@ -71,3 +100,4 @@ ipcMain.handle('columns:save', (_evt, columns) => {
 });
 ipcMain.handle('inject-css:get', () => readInjectCss());
 ipcMain.handle('shell:open-external', (_evt, url) => shell.openExternal(url));
+ipcMain.handle('compose:open', () => openComposeWindow());

@@ -6,4 +6,5 @@ contextBridge.exposeInMainWorld('xdeck', {
   getInjectCss: () => ipcRenderer.invoke('inject-css:get'),
   onInjectCssUpdated: (cb) => ipcRenderer.on('inject-css-updated', (_e, css) => cb(css)),
   openExternal: (url) => ipcRenderer.invoke('shell:open-external', url),
+  openCompose: () => ipcRenderer.invoke('compose:open'),
 });

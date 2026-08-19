@@ -3,6 +3,9 @@ const form = document.getElementById('add-column-form');
 const typeSelect = document.getElementById('type-select');
 const queryInput = document.getElementById('query-input');
 const sortSelect = document.getElementById('sort-select');
+const composeBtn = document.getElementById('compose-btn');
+
+composeBtn.addEventListener('click', () => window.xdeck.openCompose());
 
 const DEFAULT_ZOOM = 1;
 const DEFAULT_REFRESH_MS = 180000; // 3分
@@ -17,11 +20,19 @@ const REFRESH_OPTIONS = [
 
 // Search/explore/trends pages and the home timeline all render their tab bar
 // (話題のポスト/最新/... or おすすめ/フォロー中) with the same
-// data-testid="ScrollSnap-List". Search & trends columns hide it (the app's
-// own controls cover sorting), but home columns need it visible so
-// "フォロー中" can be selected — so this stays conditional per column type
-// instead of living in the static inject.css.
+// data-testid="ScrollSnap-List", so one rule hides it everywhere. For home
+// columns, "フォロー中" is auto-selected on load instead (see
+// ensureFollowingTab below) so hiding the tab bar doesn't strand the
+// timeline on "おすすめ".
 const TAB_BAR_HIDE_CSS = 'div[role="tablist"][data-testid="ScrollSnap-List"] { display: none !important; }';
+
+const ENSURE_FOLLOWING_JS = `(() => {
+  const tabs = document.querySelectorAll('div[role="tablist"][data-testid="ScrollSnap-List"] [role="tab"]');
+  const selected = Array.from(tabs).find((t) => t.getAttribute('aria-selected') === 'true');
+  if (selected && /フォロー中|Following/.test(selected.textContent)) return;
+  const followTab = Array.from(tabs).find((t) => /フォロー中|Following/.test(t.textContent));
+  if (followTab) followTab.click();
+})();`;
 
 let injectCss = '';
 let columns = [];
@@ -56,7 +67,6 @@ function columnHomeTooltip(col) {
 
 function applyCss(webview, col) {
   const prevKey = cssKeys.get(webview);
-  const tabCss = col.type === 'home' ? '' : TAB_BAR_HIDE_CSS;
   // webview.setZoomFactor() would work too, but Chromium ties it to the
   // partition's per-origin zoom map: since every column shares
   // persist:xsession + x.com, setting it on one column silently changes
@@ -64,7 +74,7 @@ function applyCss(webview, col) {
   // webview keeps each column's zoom independent.
   const zoom = col.zoom ?? DEFAULT_ZOOM;
   const zoomCss = zoom !== 1 ? `html { zoom: ${zoom}; }` : '';
-  const css = [injectCss, tabCss, zoomCss].filter(Boolean).join('\n');
+  const css = [injectCss, TAB_BAR_HIDE_CSS, zoomCss].filter(Boolean).join('\n');
   const insert = () => {
     webview.insertCSS(css).then((key) => cssKeys.set(webview, key)).catch(() => {});
   };
@@ -210,7 +220,10 @@ function createColumnElement(col) {
     window.xdeck.openExternal(e.url);
   });
 
-  const reinject = () => applyCss(webview, col);
+  const reinject = () => {
+    applyCss(webview, col);
+    if (col.type === 'home') webview.executeJavaScript(ENSURE_FOLLOWING_JS).catch(() => {});
+  };
   webview.addEventListener('dom-ready', reinject);
   webview.addEventListener('did-navigate', reinject);
   webview.addEventListener('did-navigate-in-page', reinject);
