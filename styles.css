@@ -107,16 +107,41 @@ html, body {
   flex: 0 0 auto;
 }
 
+.column-title-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .column-title {
   font-weight: 600;
   font-size: 13px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 180px;
+  max-width: 160px;
 }
 
-.column-buttons { display: flex; gap: 2px; }
+.drag-handle {
+  cursor: grab;
+  color: #536471;
+  font-size: 13px;
+  line-height: 1;
+  user-select: none;
+  flex: 0 0 auto;
+}
+
+.drag-handle:active { cursor: grabbing; }
+
+.column.dragging { opacity: 0.4; }
+
+.column.drag-over {
+  outline: 2px dashed #1d9bf0;
+  outline-offset: -2px;
+}
+
+.column-buttons { display: flex; gap: 2px; flex: 0 0 auto; }
 
 .column-buttons button {
   background: transparent;
