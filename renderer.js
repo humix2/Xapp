@@ -261,10 +261,6 @@ function createColumnElement(col) {
     if (dragSrcId) reorderColumn(dragSrcId, col.id);
   });
 
-  webview.addEventListener('new-window', (e) => {
-    e.preventDefault();
-    window.xdeck.openExternal(e.url);
-  });
 
   const reinject = () => {
     applyCss(webview, col);

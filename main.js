@@ -44,6 +44,40 @@ function createWindow() {
   mainWindow.loadFile('index.html');
 }
 
+const ALLOWED_HOSTNAME = /(?:^|\.)(x|twitter)\.com$/i;
+
+// Every link a user could click should either stay inside XDeck (only if
+// it's still x.com/twitter.com) or open in the OS's default browser — never
+// spawn a new Electron window. The <webview> tag's 'new-window' DOM event is
+// deprecated and, confirmed by testing, no longer reliably prevents Electron
+// from opening its own popup window even when preventDefault() is called.
+// webContents.setWindowOpenHandler() (registered here, on the guest's real
+// webContents) is the current, reliable replacement. will-navigate is a
+// second layer for links that navigate the same window instead of opening a
+// new one.
+//
+// Registered after createWindow() so mainWindow's own webContents (created
+// synchronously inside `new BrowserWindow()`, before this listener exists)
+// never reaches it — only future webContents do: every column's <webview>
+// guest and the compose popup window.
+function interceptExternalNavigation(_event, contents) {
+  contents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
+  contents.on('will-navigate', (event, url) => {
+    try {
+      if (!ALLOWED_HOSTNAME.test(new URL(url).hostname)) {
+        event.preventDefault();
+        shell.openExternal(url);
+      }
+    } catch {
+      // Not a parseable absolute URL; leave navigation alone.
+    }
+  });
+}
+
 let composeWindow = null;
 
 function openComposeWindow() {
@@ -75,6 +109,7 @@ function openComposeWindow() {
 
 app.whenReady().then(() => {
   createWindow();
+  app.on('web-contents-created', interceptExternalNavigation);
 
   // Live-reload inject.css: edit the file while the app is running (e.g. after
   // X changes its markup) and every column re-applies the CSS immediately.
@@ -99,5 +134,4 @@ ipcMain.handle('columns:save', (_evt, columns) => {
   return true;
 });
 ipcMain.handle('inject-css:get', () => readInjectCss());
-ipcMain.handle('shell:open-external', (_evt, url) => shell.openExternal(url));
 ipcMain.handle('compose:open', () => openComposeWindow());
