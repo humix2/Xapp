@@ -1,0 +1,53 @@
+/* XDeck injected styles — hides X's chrome so only the timeline remains.
+   X changes its DOM periodically; if hidden elements reappear or new
+   clutter shows up, open a column's DevTools (the magnifier button),
+   inspect the element, and add/update a selector below. This file is
+   watched live — save it and every open column re-applies immediately,
+   no app restart needed. */
+
+/* Left primary navigation (Home/Explore/Notifications/... + compose button) */
+nav:has([data-testid="SideNav_NewTweet_Button"]) { display: none !important; }
+header:has([data-testid="SideNav_AccountSwitcher_Button"]) { display: none !important; }
+
+/* Right sidebar: trends, who-to-follow, footer links, secondary search box */
+div[data-testid="sidebarColumn"] { display: none !important; }
+
+/* Mobile-style bottom tab bar (can appear at narrow widths) */
+div[data-testid="BottomBar"] { display: none !important; }
+
+/* Floating "Post" compose button/link */
+a[data-testid="SideNav_NewTweet_Button"],
+a[href="/compose/post"] { display: none !important; }
+
+/* "Trends for you" / promoted module sometimes embedded above the timeline */
+aside[aria-label*="Timeline: Trending"],
+div[aria-label*="Trending"] { display: none !important; }
+
+/* X's own search box (search/explore page header). The app's toolbar already
+   provides search input, so each column should show results only. */
+div[data-testid="primaryColumn"] > div > div:has(input[data-testid="SearchBox_Search_Input"]) {
+  display: none !important;
+}
+
+/* X's own "話題のポスト/最新/ユーザー/メディア" (Top/Latest/People/Media) or
+   "おすすめ/トレンド" (For you/Trending) tab bar. The app's own sort dropdown
+   and column-type selector cover this, so each column stays results-only. */
+div[role="tablist"][data-testid="ScrollSnap-List"] { display: none !important; }
+
+/* Let the timeline take the full column width instead of the centered
+   fixed-width layout X uses when the side columns are present */
+main[role="main"],
+div[data-testid="primaryColumn"] {
+  max-width: 100% !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  border: none !important;
+}
+div[data-testid="primaryColumn"] > div {
+  max-width: 100% !important;
+}
+
+/* Match the app's dark chrome so column edges don't flash white while loading */
+html, body, #react-root {
+  background-color: #15202b !important;
+}

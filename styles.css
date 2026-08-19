@@ -1,0 +1,138 @@
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #15202b;
+  color: #e7e9ea;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overflow: hidden;
+}
+
+#toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #1e2732;
+  border-bottom: 1px solid #38444d;
+  -webkit-app-region: drag;
+}
+
+#toolbar input, #toolbar select, #toolbar button {
+  -webkit-app-region: no-drag;
+}
+
+#add-column-form {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+}
+
+#query-input {
+  flex: 1;
+  max-width: 360px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #38444d;
+  background: #0f1720;
+  color: #e7e9ea;
+}
+
+#add-column-form select, #toolbar-right select {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #38444d;
+  background: #0f1720;
+  color: #e7e9ea;
+}
+
+#add-column-form button {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: none;
+  background: #1d9bf0;
+  color: white;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+#add-column-form button:hover { background: #1a8cd8; }
+
+#toolbar-right {
+  color: #8b98a5;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+#columns {
+  display: flex;
+  align-items: stretch;
+  height: calc(100vh - 49px);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.empty-state {
+  margin: 48px auto;
+  max-width: 420px;
+  text-align: center;
+  color: #8b98a5;
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 0 16px;
+}
+
+.column {
+  flex: 0 0 380px;
+  width: 380px;
+  border-right: 1px solid #38444d;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: #1e2732;
+  border-bottom: 1px solid #38444d;
+  flex: 0 0 auto;
+}
+
+.column-title {
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+.column-buttons { display: flex; gap: 2px; }
+
+.column-buttons button {
+  background: transparent;
+  border: none;
+  color: #8b98a5;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.column-buttons button:hover { background: #2c3640; color: #e7e9ea; }
+
+.col-webview {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  border: none;
+}

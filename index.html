@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>XDeck</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="toolbar">
+    <form id="add-column-form">
+      <select id="type-select">
+        <option value="search">検索</option>
+        <option value="trends">トレンド</option>
+      </select>
+      <input id="query-input" type="text" placeholder="検索キーワードを入力してカラム追加..." autocomplete="off" />
+      <select id="sort-select">
+        <option value="live">最新</option>
+        <option value="top">話題</option>
+      </select>
+      <button type="submit">＋ カラム追加</button>
+    </form>
+    <div id="toolbar-right">
+      自動更新:
+      <select id="refresh-interval">
+        <option value="0">オフ</option>
+        <option value="60000">1分</option>
+        <option value="180000" selected>3分</option>
+        <option value="300000">5分</option>
+        <option value="600000">10分</option>
+      </select>
+    </div>
+  </div>
+  <div id="columns"></div>
+  <script src="renderer.js"></script>
+</body>
+</html>
