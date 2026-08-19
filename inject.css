@@ -35,6 +35,23 @@ div[data-testid="primaryColumn"] > div > div:has(input[data-testid="SearchBox_Se
    renderer.js (TAB_BAR_HIDE_CSS) applied to every column. Home columns
    auto-select "フォロー中" on load (ENSURE_FOLLOWING_JS) before it's hidden. */
 
+/* "タイムラインを管理" (timeline algorithm settings) gear button on the home
+   timeline. It sits next to the tab bar above but isn't inside it, so hiding
+   the tab bar doesn't catch it — it has no data-testid, only this aria-label. */
+button[aria-label="タイムラインを管理"],
+button[aria-label="Manage timeline"] {
+  display: none !important;
+}
+
+/* Hiding the tab bar and the button above leaves their shared wrapper row
+   behind as an empty ~54px strip (it still has its own padding/border).
+   Hide that whole row instead — it's confirmed to contain no <article>
+   (tweet), so the timeline itself is never matched. */
+div[data-testid="primaryColumn"] div:has(> div[role="tablist"][data-testid="ScrollSnap-List"]):not(:has(article)),
+div[data-testid="primaryColumn"] div:has(div[role="tablist"][data-testid="ScrollSnap-List"]):not(:has(article)) {
+  display: none !important;
+}
+
 /* Inline "いまどうしてる？/What's happening?" post composer on the home
    timeline. This app is read-only by design (posting is done through the
    separate "✎ ポストする" popup), so it's hidden to leave more room for the

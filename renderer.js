@@ -34,6 +34,52 @@ const ENSURE_FOLLOWING_JS = `(() => {
   if (followTab) followTab.click();
 })();`;
 
+// Hides posts matching any filter predicate, and keeps re-checking as more
+// posts stream in via infinite scroll (a MutationObserver, since a one-time
+// CSS/JS pass only ever sees what's rendered at that moment). Currently just
+// filters promoted ("広告"/"Ad"/"Promoted") posts. X renders that label as a
+// plain <span> with no data-testid or other stable attribute — confirmed by
+// inspecting a real ad — so detection has to walk the article's text nodes
+// looking for an exact match, excluding the actual tweet body
+// ([data-testid="tweetText"]) so a post that merely mentions the word "広告"
+// isn't caught. Written as a list of predicates so a future muted-keyword
+// filter is a one-line addition rather than a new mechanism.
+const POST_FILTER_JS = `(() => {
+  if (window.__xdeckFilterInstalled) return;
+  window.__xdeckFilterInstalled = true;
+
+  const AD_LABELS = new Set(['広告', 'Ad', 'Promoted', 'プロモーション']);
+
+  function isPromoted(article) {
+    const tweetText = article.querySelector('[data-testid="tweetText"]');
+    const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        if (tweetText && tweetText.contains(node)) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    let node;
+    while ((node = walker.nextNode())) {
+      if (AD_LABELS.has(node.textContent.trim())) return true;
+    }
+    return false;
+  }
+
+  const filters = [isPromoted];
+
+  function sweep() {
+    document.querySelectorAll('article').forEach((article) => {
+      if (filters.some((fn) => fn(article))) {
+        const cell = article.closest('[data-testid="cellInnerDiv"]') || article;
+        cell.style.display = 'none';
+      }
+    });
+  }
+
+  sweep();
+  new MutationObserver(sweep).observe(document.body, { childList: true, subtree: true });
+})();`;
+
 let injectCss = '';
 let columns = [];
 let dragSrcId = null;
@@ -222,6 +268,7 @@ function createColumnElement(col) {
 
   const reinject = () => {
     applyCss(webview, col);
+    webview.executeJavaScript(POST_FILTER_JS).catch(() => {});
     if (col.type === 'home') webview.executeJavaScript(ENSURE_FOLLOWING_JS).catch(() => {});
   };
   webview.addEventListener('dom-ready', reinject);
