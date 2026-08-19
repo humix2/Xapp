@@ -3,7 +3,6 @@ const path = require('path');
 const fs = require('fs');
 
 const configPath = path.join(app.getPath('userData'), 'columns.json');
-const settingsPath = path.join(app.getPath('userData'), 'settings.json');
 const injectCssPath = path.join(__dirname, 'inject.css');
 
 function loadColumns() {
@@ -16,18 +15,6 @@ function loadColumns() {
 
 function saveColumns(columns) {
   fs.writeFileSync(configPath, JSON.stringify(columns, null, 2), 'utf-8');
-}
-
-function loadSettings() {
-  try {
-    return JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
-  } catch {
-    return {};
-  }
-}
-
-function saveSettings(settings) {
-  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
 }
 
 function readInjectCss() {
@@ -84,8 +71,3 @@ ipcMain.handle('columns:save', (_evt, columns) => {
 });
 ipcMain.handle('inject-css:get', () => readInjectCss());
 ipcMain.handle('shell:open-external', (_evt, url) => shell.openExternal(url));
-ipcMain.handle('settings:load', () => loadSettings());
-ipcMain.handle('settings:save', (_evt, settings) => {
-  saveSettings(settings);
-  return true;
-});

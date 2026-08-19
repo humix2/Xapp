@@ -3,15 +3,29 @@ const form = document.getElementById('add-column-form');
 const typeSelect = document.getElementById('type-select');
 const queryInput = document.getElementById('query-input');
 const sortSelect = document.getElementById('sort-select');
-const refreshIntervalSelect = document.getElementById('refresh-interval');
-const zoomSelect = document.getElementById('zoom-select');
+
+const DEFAULT_ZOOM = 1;
+const DEFAULT_REFRESH_MS = 180000; // 3分
+const ZOOM_OPTIONS = [0.8, 0.9, 1, 1.1, 1.25, 1.5];
+const REFRESH_OPTIONS = [
+  [0, 'オフ'],
+  [60000, '1分'],
+  [180000, '3分'],
+  [300000, '5分'],
+  [600000, '10分'],
+];
+
+// Search/explore/trends pages and the home timeline all render their tab bar
+// (話題のポスト/最新/... or おすすめ/フォロー中) with the same
+// data-testid="ScrollSnap-List". Search & trends columns hide it (the app's
+// own controls cover sorting), but home columns need it visible so
+// "フォロー中" can be selected — so this stays conditional per column type
+// instead of living in the static inject.css.
+const TAB_BAR_HIDE_CSS = 'div[role="tablist"][data-testid="ScrollSnap-List"] { display: none !important; }';
 
 let injectCss = '';
 let columns = [];
-let refreshMs = Number(refreshIntervalSelect.value);
-let refreshTimer = null;
 let dragSrcId = null;
-let zoomFactor = Number(zoomSelect.value);
 const cssKeys = new WeakMap(); // webview -> last inserted CSS key
 
 function buildSearchUrl(query, sort) {
@@ -24,17 +38,35 @@ function buildSearchUrl(query, sort) {
 
 function buildColumnUrl(col) {
   if (col.type === 'trends') return 'https://x.com/explore/tabs/trending';
+  if (col.type === 'home') return 'https://x.com/home';
   return buildSearchUrl(col.query, col.sort);
 }
 
 function columnTitle(col) {
-  return col.type === 'trends' ? 'トレンド' : col.query;
+  if (col.type === 'trends') return 'トレンド';
+  if (col.type === 'home') return 'ホーム';
+  return col.query;
 }
 
-function applyCss(webview) {
+function columnHomeTooltip(col) {
+  if (col.type === 'trends') return 'トレンドに戻る';
+  if (col.type === 'home') return 'ホームに戻る';
+  return '検索トップに戻る';
+}
+
+function applyCss(webview, col) {
   const prevKey = cssKeys.get(webview);
+  const tabCss = col.type === 'home' ? '' : TAB_BAR_HIDE_CSS;
+  // webview.setZoomFactor() would work too, but Chromium ties it to the
+  // partition's per-origin zoom map: since every column shares
+  // persist:xsession + x.com, setting it on one column silently changes
+  // the zoom of every other column too. Scoping zoom to CSS injected per
+  // webview keeps each column's zoom independent.
+  const zoom = col.zoom ?? DEFAULT_ZOOM;
+  const zoomCss = zoom !== 1 ? `html { zoom: ${zoom}; }` : '';
+  const css = [injectCss, tabCss, zoomCss].filter(Boolean).join('\n');
   const insert = () => {
-    webview.insertCSS(injectCss).then((key) => cssKeys.set(webview, key)).catch(() => {});
+    webview.insertCSS(css).then((key) => cssKeys.set(webview, key)).catch(() => {});
   };
   if (prevKey) {
     webview.removeInsertedCSS(prevKey).catch(() => {}).finally(insert);
@@ -49,6 +81,29 @@ function mkBtn(label, title, onClick) {
   b.title = title;
   b.addEventListener('click', onClick);
   return b;
+}
+
+function buildSelect(className, options, selectedValue, onChange) {
+  const select = document.createElement('select');
+  select.className = className;
+  for (const [value, label] of options) {
+    const opt = document.createElement('option');
+    opt.value = String(value);
+    opt.textContent = label;
+    if (Number(value) === Number(selectedValue)) opt.selected = true;
+    select.appendChild(opt);
+  }
+  select.addEventListener('change', () => onChange(Number(select.value)));
+  return select;
+}
+
+function scheduleColumnRefresh(wrap, col) {
+  if (wrap._refreshTimer) clearInterval(wrap._refreshTimer);
+  const ms = col.refreshMs ?? DEFAULT_REFRESH_MS;
+  if (!ms) return;
+  wrap._refreshTimer = setInterval(() => {
+    wrap._webview && wrap._webview.reload();
+  }, ms);
 }
 
 function createColumnElement(col) {
@@ -76,12 +131,47 @@ function createColumnElement(col) {
   title.textContent = columnTitle(col);
   title.title = columnTitle(col);
 
+  const settingsPanel = document.createElement('div');
+  settingsPanel.className = 'column-settings';
+  settingsPanel.hidden = true;
+
+  const zoomLabel = document.createElement('label');
+  zoomLabel.textContent = '文字サイズ';
+  const zoomSelect = buildSelect(
+    'col-zoom-select',
+    ZOOM_OPTIONS.map((v) => [v, `${Math.round(v * 100)}%`]),
+    col.zoom ?? DEFAULT_ZOOM,
+    (value) => {
+      col.zoom = value;
+      persist();
+      applyCss(webview, col);
+    },
+  );
+  zoomLabel.appendChild(zoomSelect);
+
+  const refreshLabel = document.createElement('label');
+  refreshLabel.textContent = '自動更新';
+  const refreshSelect = buildSelect(
+    'col-refresh-select',
+    REFRESH_OPTIONS,
+    col.refreshMs ?? DEFAULT_REFRESH_MS,
+    (value) => {
+      col.refreshMs = value;
+      persist();
+      scheduleColumnRefresh(wrap, col);
+    },
+  );
+  refreshLabel.appendChild(refreshSelect);
+
+  settingsPanel.append(zoomLabel, refreshLabel);
+
   const btns = document.createElement('div');
   btns.className = 'column-buttons';
   btns.append(
-    mkBtn('⌂', col.type === 'trends' ? 'トレンドに戻る' : '検索トップに戻る', () => webview.loadURL(buildColumnUrl(col))),
+    mkBtn('⌂', columnHomeTooltip(col), () => webview.loadURL(buildColumnUrl(col))),
     mkBtn('←', '戻る', () => { if (webview.canGoBack()) webview.goBack(); }),
     mkBtn('⟳', '更新', () => webview.reload()),
+    mkBtn('⚙', 'カラム設定（文字サイズ・自動更新）', () => { settingsPanel.hidden = !settingsPanel.hidden; }),
     mkBtn('🔍', 'DevTools（要素検証・CSS調整用）', () => webview.openDevTools()),
     mkBtn('✕', 'カラム削除', () => removeColumn(col.id)),
   );
@@ -120,16 +210,15 @@ function createColumnElement(col) {
     window.xdeck.openExternal(e.url);
   });
 
-  const reinject = () => {
-    applyCss(webview);
-    webview.setZoomFactor(zoomFactor);
-  };
+  const reinject = () => applyCss(webview, col);
   webview.addEventListener('dom-ready', reinject);
   webview.addEventListener('did-navigate', reinject);
   webview.addEventListener('did-navigate-in-page', reinject);
 
-  wrap.append(header, webview);
+  wrap.append(header, settingsPanel, webview);
   wrap._webview = webview;
+  wrap._col = col;
+  scheduleColumnRefresh(wrap, col);
   return wrap;
 }
 
@@ -138,7 +227,8 @@ function showEmptyState() {
   const empty = document.createElement('div');
   empty.className = 'empty-state';
   empty.textContent =
-    '上のフォームから検索キーワードを入力してカラムを追加してください（「トレンド」を選ぶとX全体のトレンド一覧カラムになります）。' +
+    '上のフォームから検索キーワードを入力してカラムを追加してください（「ホーム」でフォロー中タイムライン、' +
+    '「トレンド」でX全体のトレンド一覧のカラムになります）。' +
     '初回はいずれかのカラムでXにログインすると、セッションは全カラム・次回起動時にも共有されます。';
   columnsEl.appendChild(empty);
 }
@@ -159,7 +249,12 @@ function persist() {
 }
 
 function addColumn(partial) {
-  const col = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, ...partial };
+  const col = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    zoom: DEFAULT_ZOOM,
+    refreshMs: DEFAULT_REFRESH_MS,
+    ...partial,
+  };
   columns.push(col);
   persist();
   if (columns.length === 1) {
@@ -173,7 +268,10 @@ function removeColumn(id) {
   columns = columns.filter((c) => c.id !== id);
   persist();
   const el = columnsEl.querySelector(`.column[data-id="${id}"]`);
-  if (el) el.remove();
+  if (el) {
+    if (el._refreshTimer) clearInterval(el._refreshTimer);
+    el.remove();
+  }
   if (columns.length === 0) showEmptyState();
 }
 
@@ -198,10 +296,10 @@ function reorderColumn(srcId, targetId) {
 }
 
 function updateFormForType() {
-  const isTrends = typeSelect.value === 'trends';
-  queryInput.style.display = isTrends ? 'none' : '';
-  sortSelect.style.display = isTrends ? 'none' : '';
-  queryInput.required = !isTrends;
+  const needsQuery = typeSelect.value === 'search';
+  queryInput.style.display = needsQuery ? '' : 'none';
+  sortSelect.style.display = needsQuery ? '' : 'none';
+  queryInput.required = needsQuery;
 }
 
 typeSelect.addEventListener('change', updateFormForType);
@@ -209,8 +307,8 @@ updateFormForType();
 
 form.addEventListener('submit', (e) => {
   e.preventDefault();
-  if (typeSelect.value === 'trends') {
-    addColumn({ type: 'trends' });
+  if (typeSelect.value !== 'search') {
+    addColumn({ type: typeSelect.value });
     return;
   }
   const q = queryInput.value.trim();
@@ -219,47 +317,17 @@ form.addEventListener('submit', (e) => {
   queryInput.value = '';
 });
 
-function scheduleRefresh() {
-  if (refreshTimer) clearInterval(refreshTimer);
-  if (!refreshMs) return;
-  refreshTimer = setInterval(() => {
-    for (const wrap of columnsEl.children) {
-      wrap._webview && wrap._webview.reload();
-    }
-  }, refreshMs);
-}
-
-refreshIntervalSelect.addEventListener('change', () => {
-  refreshMs = Number(refreshIntervalSelect.value);
-  scheduleRefresh();
-});
-
-zoomSelect.addEventListener('change', () => {
-  zoomFactor = Number(zoomSelect.value);
-  window.xdeck.saveSettings({ fontZoom: zoomFactor });
-  for (const wrap of columnsEl.children) {
-    wrap._webview && wrap._webview.setZoomFactor(zoomFactor);
-  }
-});
-
 async function init() {
   injectCss = await window.xdeck.getInjectCss();
   window.xdeck.onInjectCssUpdated((css) => {
     injectCss = css;
     for (const wrap of columnsEl.children) {
-      if (wrap._webview) applyCss(wrap._webview);
+      if (wrap._webview && wrap._col) applyCss(wrap._webview, wrap._col);
     }
   });
 
-  const settings = await window.xdeck.loadSettings();
-  if (settings.fontZoom) {
-    zoomFactor = settings.fontZoom;
-    zoomSelect.value = String(zoomFactor);
-  }
-
   columns = await window.xdeck.loadColumns();
   renderAll();
-  scheduleRefresh();
 }
 
 init();

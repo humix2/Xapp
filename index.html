@@ -10,6 +10,7 @@
     <form id="add-column-form">
       <select id="type-select">
         <option value="search">検索</option>
+        <option value="home">ホーム（フォロー中）</option>
         <option value="trends">トレンド</option>
       </select>
       <input id="query-input" type="text" placeholder="検索キーワードを入力してカラム追加..." autocomplete="off" />
@@ -19,25 +20,6 @@
       </select>
       <button type="submit">＋ カラム追加</button>
     </form>
-    <div id="toolbar-right">
-      文字サイズ:
-      <select id="zoom-select">
-        <option value="0.8">80%</option>
-        <option value="0.9">90%</option>
-        <option value="1" selected>100%</option>
-        <option value="1.1">110%</option>
-        <option value="1.25">125%</option>
-        <option value="1.5">150%</option>
-      </select>
-      自動更新:
-      <select id="refresh-interval">
-        <option value="0">オフ</option>
-        <option value="60000">1分</option>
-        <option value="180000" selected>3分</option>
-        <option value="300000">5分</option>
-        <option value="600000">10分</option>
-      </select>
-    </div>
   </div>
   <div id="columns"></div>
   <script src="renderer.js"></script>
