@@ -169,16 +169,35 @@ function openComposeWindow() {
   // Auto-close the popup once the post actually goes through, instead of
   // making the user close it themselves. X's own "Post" button click isn't
   // a reliable signal (the request could still fail), so this watches for a
-  // successful response from the CreateTweet GraphQL call the click
-  // triggers — the same call regardless of X's DOM/build, unlike watching
-  // for a redirect or a UI toast that could change without notice.
+  // successful response from the GraphQL call the click triggers — the
+  // operation name is a guess (X doesn't publish this), so the pattern is
+  // deliberately broad (anything under .../graphql/.../ with "Tweet" in the
+  // operation name, on either x.com or twitter.com) rather than the exact
+  // "CreateTweet" tried first, which didn't close the window on a real post.
+  //
+  // debugLogPath: every matching graphql call (regardless of status) is
+  // appended here so the actual operation name can be read back after a
+  // real post, without needing DevTools open at the time.
   const ses = composeWindow.webContents.session;
-  const onPostCompleted = (details) => {
-    if (details.statusCode >= 200 && details.statusCode < 300) {
+  const debugLogPath = path.join(app.getPath('userData'), 'compose-debug.log');
+  const urls = [
+    'https://x.com/i/api/graphql/*',
+    'https://twitter.com/i/api/graphql/*',
+    'https://api.x.com/*',
+    'https://api.twitter.com/*',
+  ];
+  const onGraphqlCompleted = (details) => {
+    try {
+      fs.appendFileSync(debugLogPath, `${new Date().toISOString()} ${details.statusCode} ${details.method} ${details.url}\n`);
+    } catch {
+      // Best-effort debug log; never let this break the actual feature.
+    }
+    const isPostLike = /Tweet/i.test(details.url) && details.method === 'POST';
+    if (isPostLike && details.statusCode >= 200 && details.statusCode < 300) {
       if (composeWindow && !composeWindow.isDestroyed()) composeWindow.close();
     }
   };
-  ses.webRequest.onCompleted({ urls: ['https://x.com/i/api/graphql/*/CreateTweet*'] }, onPostCompleted);
+  ses.webRequest.onCompleted({ urls }, onGraphqlCompleted);
 
   composeWindow.on('closed', () => {
     ses.webRequest.onCompleted(null);
