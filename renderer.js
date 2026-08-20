@@ -34,19 +34,34 @@ const OPERATOR_OPTIONS = [
 
 // Search/explore/trends pages and the home timeline all render their tab bar
 // (話題のポスト/最新/... or おすすめ/フォロー中) with the same
-// data-testid="ScrollSnap-List", so one rule hides it everywhere. For home
-// columns, "フォロー中" is auto-selected on load instead (see
-// ensureFollowingTab below) so hiding the tab bar doesn't strand the
-// timeline on "おすすめ".
+// data-testid="ScrollSnap-List", so one rule hides it everywhere. Hiding it
+// removes the only way to see or switch which one is active, so home columns
+// get a "表示" select (おすすめ/フォロー中) in ⚙ that clicks the matching tab
+// via ensureTabSelectedJS below, and search columns get their ソート select
+// exposed there too (rebuilding the URL with f=live instead of a tab click,
+// since that's how X's search itself distinguishes 話題のポスト/最新).
 const TAB_BAR_HIDE_CSS = 'div[role="tablist"][data-testid="ScrollSnap-List"] { display: none !important; }';
 
-const ENSURE_FOLLOWING_JS = `(() => {
-  const tabs = document.querySelectorAll('div[role="tablist"][data-testid="ScrollSnap-List"] [role="tab"]');
-  const selected = Array.from(tabs).find((t) => t.getAttribute('aria-selected') === 'true');
-  if (selected && /フォロー中|Following/.test(selected.textContent)) return;
-  const followTab = Array.from(tabs).find((t) => /フォロー中|Following/.test(t.textContent));
-  if (followTab) followTab.click();
-})();`;
+const HOME_FEED_OPTIONS = [
+  ['following', 'フォロー中', 'フォロー中|Following'],
+  ['forYou', 'おすすめ', 'おすすめ|For you'],
+];
+
+function homeFeedOption(col) {
+  const key = col.homeFeed || 'following';
+  return HOME_FEED_OPTIONS.find(([k]) => k === key) || HOME_FEED_OPTIONS[0];
+}
+
+function ensureTabSelectedJS(regexSource) {
+  return `(() => {
+    const re = /${regexSource}/;
+    const tabs = document.querySelectorAll('div[role="tablist"][data-testid="ScrollSnap-List"] [role="tab"]');
+    const selected = Array.from(tabs).find((t) => t.getAttribute('aria-selected') === 'true');
+    if (selected && re.test(selected.textContent)) return;
+    const target = Array.from(tabs).find((t) => re.test(t.textContent));
+    if (target) target.click();
+  })();`;
+}
 
 // X shows a "新しいポストがあります" (new posts available) button above the
 // timeline — the same one its own "." keyboard shortcut activates — that
@@ -130,9 +145,9 @@ function buildColumnUrl(col) {
 
 function columnTitle(col) {
   if (col.type === 'trends') return 'トレンド';
-  if (col.type === 'home') return 'ホーム';
+  if (col.type === 'home') return `ホーム・${homeFeedOption(col)[1]}`;
   if (col.type === 'notifications') return '通知';
-  return col.query;
+  return `${col.query}・${col.sort === 'top' ? '話題' : '最新'}`;
 }
 
 function columnHomeTooltip(col) {
@@ -184,6 +199,24 @@ function buildSelect(className, options, selectedValue, onChange) {
   return select;
 }
 
+// Same idea as buildSelect but for string-valued options (sort: 'live'/'top',
+// homeFeed: 'following'/'forYou') — buildSelect compares via Number(), which
+// makes every non-numeric value NaN === NaN (always false), so it can never
+// mark the right <option> as selected for these.
+function buildStringSelect(className, options, selectedValue, onChange) {
+  const select = document.createElement('select');
+  select.className = className;
+  for (const [value, label] of options) {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = label;
+    select.appendChild(opt);
+  }
+  select.value = selectedValue;
+  select.addEventListener('change', () => onChange(select.value));
+  return select;
+}
+
 function scheduleColumnRefresh(wrap, col) {
   if (wrap._refreshTimer) clearInterval(wrap._refreshTimer);
   const ms = col.refreshMs ?? DEFAULT_REFRESH_MS;
@@ -220,6 +253,11 @@ function createColumnElement(col) {
   title.className = 'column-title';
   title.textContent = columnTitle(col);
   title.title = columnTitle(col);
+  const updateTitle = () => {
+    const t = columnTitle(col);
+    title.textContent = t;
+    title.title = t;
+  };
 
   const settingsPanel = document.createElement('div');
   settingsPanel.className = 'column-settings';
@@ -256,6 +294,22 @@ function createColumnElement(col) {
   settingsPanel.append(zoomLabel, refreshLabel);
 
   if (!col.type || col.type === 'search') {
+    const sortLabel = document.createElement('label');
+    sortLabel.textContent = '並び替え';
+    const sortSel = buildStringSelect(
+      'col-sort-select',
+      [['live', '最新'], ['top', '話題']],
+      col.sort === 'top' ? 'top' : 'live',
+      (value) => {
+        col.sort = value;
+        persist();
+        updateTitle();
+        webview.loadURL(buildColumnUrl(col));
+      },
+    );
+    sortLabel.appendChild(sortSel);
+    settingsPanel.appendChild(sortLabel);
+
     if (!col.operators) col.operators = [];
     const opsWrap = document.createElement('div');
     opsWrap.className = 'column-settings-operators';
@@ -279,13 +333,31 @@ function createColumnElement(col) {
     settingsPanel.appendChild(opsWrap);
   }
 
+  if (col.type === 'home') {
+    const feedLabel = document.createElement('label');
+    feedLabel.textContent = '表示';
+    const feedSel = buildStringSelect(
+      'col-feed-select',
+      HOME_FEED_OPTIONS.map(([key, label]) => [key, label]),
+      homeFeedOption(col)[0],
+      (value) => {
+        col.homeFeed = value;
+        persist();
+        updateTitle();
+        webview.executeJavaScript(ensureTabSelectedJS(homeFeedOption(col)[2])).catch(() => {});
+      },
+    );
+    feedLabel.appendChild(feedSel);
+    settingsPanel.appendChild(feedLabel);
+  }
+
   const btns = document.createElement('div');
   btns.className = 'column-buttons';
   btns.append(
     mkBtn('⌂', columnHomeTooltip(col), () => webview.loadURL(buildColumnUrl(col))),
     mkBtn('←', '戻る', () => { if (webview.canGoBack()) webview.goBack(); }),
     mkBtn('⟳', '更新', () => webview.reload()),
-    mkBtn('⚙', 'カラム設定（文字サイズ・自動更新・検索演算子）', () => { settingsPanel.hidden = !settingsPanel.hidden; }),
+    mkBtn('⚙', 'カラム設定（文字サイズ・自動更新・並び替え/表示・検索演算子）', () => { settingsPanel.hidden = !settingsPanel.hidden; }),
     mkBtn('✕', 'カラム削除', () => removeColumn(col.id)),
   );
 
@@ -322,7 +394,7 @@ function createColumnElement(col) {
   const reinject = () => {
     applyCss(webview, col);
     webview.executeJavaScript(POST_FILTER_JS).catch(() => {});
-    if (col.type === 'home') webview.executeJavaScript(ENSURE_FOLLOWING_JS).catch(() => {});
+    if (col.type === 'home') webview.executeJavaScript(ensureTabSelectedJS(homeFeedOption(col)[2])).catch(() => {});
   };
   webview.addEventListener('dom-ready', reinject);
   webview.addEventListener('did-navigate', reinject);
