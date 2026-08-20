@@ -1,8 +1,9 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
 const configPath = path.join(app.getPath('userData'), 'columns.json');
+const windowStatePath = path.join(app.getPath('userData'), 'window-state.json');
 const injectCssPath = path.join(__dirname, 'inject.css');
 
 function loadColumns() {
@@ -25,12 +26,50 @@ function readInjectCss() {
   }
 }
 
+function loadWindowState() {
+  try {
+    return JSON.parse(fs.readFileSync(windowStatePath, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+function saveWindowState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const isMaximized = mainWindow.isMaximized();
+  const bounds = mainWindow.getNormalBounds();
+  fs.writeFileSync(windowStatePath, JSON.stringify({ ...bounds, isMaximized }), 'utf-8');
+}
+
+// Only trust a saved position if the window would actually land somewhere
+// reachable — e.g. a second monitor that's since been unplugged shouldn't
+// strand the window off-screen. Width/height are kept either way.
+function sanitizeWindowState(saved) {
+  if (!saved || typeof saved.width !== 'number' || typeof saved.height !== 'number') return null;
+  const width = Math.max(600, Math.min(saved.width, 6000));
+  const height = Math.max(400, Math.min(saved.height, 6000));
+  if (typeof saved.x !== 'number' || typeof saved.y !== 'number') {
+    return { width, height, isMaximized: !!saved.isMaximized };
+  }
+  const onScreen = screen.getAllDisplays().some((d) => {
+    const a = d.workArea;
+    return saved.x + 100 > a.x && saved.x < a.x + a.width && saved.y + 20 > a.y && saved.y < a.y + a.height;
+  });
+  return onScreen
+    ? { x: saved.x, y: saved.y, width, height, isMaximized: !!saved.isMaximized }
+    : { width, height, isMaximized: !!saved.isMaximized };
+}
+
 let mainWindow;
 
 function createWindow() {
+  const state = sanitizeWindowState(loadWindowState());
+
   mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    width: state?.width ?? 1400,
+    height: state?.height ?? 900,
+    x: state?.x,
+    y: state?.y,
     backgroundColor: '#15202b',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -40,8 +79,22 @@ function createWindow() {
     },
   });
 
+  if (state?.isMaximized) mainWindow.maximize();
+
   mainWindow.setMenuBarVisibility(false);
   mainWindow.loadFile('index.html');
+
+  let saveTimer = null;
+  const scheduleSave = () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveWindowState, 500);
+  };
+  mainWindow.on('resize', scheduleSave);
+  mainWindow.on('move', scheduleSave);
+  mainWindow.on('close', () => {
+    clearTimeout(saveTimer);
+    saveWindowState();
+  });
 }
 
 const ALLOWED_HOSTNAME = /(?:^|\.)(x|twitter)\.com$/i;
