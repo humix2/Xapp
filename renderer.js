@@ -37,6 +37,19 @@ const ENSURE_FOLLOWING_JS = `(() => {
   if (followTab) followTab.click();
 })();`;
 
+// X shows a "新しいポストがあります" (new posts available) button above the
+// timeline — the same one its own "." keyboard shortcut activates — that
+// inserts new posts in place without a page navigation. Clicking it instead
+// of webview.reload() for the periodic auto-refresh avoids the reload flash
+// and keeps scroll position when there's nothing new to show (X's own
+// button still jumps to top when there IS something new, same as it would
+// if the user triggered it themselves). Confirmed via testing: no
+// did-navigate fires and the URL is unchanged.
+const CLICK_NEW_POSTS_JS = `(() => {
+  const btn = document.querySelector('[aria-label*="新しいポスト"], [aria-label*="new post" i]');
+  if (btn) btn.click();
+})();`;
+
 // Hides posts matching any filter predicate, and keeps re-checking as more
 // posts stream in via infinite scroll (a MutationObserver, since a one-time
 // CSS/JS pass only ever sees what's rendered at that moment). Currently just
@@ -161,7 +174,7 @@ function scheduleColumnRefresh(wrap, col) {
   const ms = col.refreshMs ?? DEFAULT_REFRESH_MS;
   if (!ms) return;
   wrap._refreshTimer = setInterval(() => {
-    wrap._webview && wrap._webview.reload();
+    wrap._webview && wrap._webview.executeJavaScript(CLICK_NEW_POSTS_JS).catch(() => {});
   }, ms);
 }
 
