@@ -165,7 +165,23 @@ function openComposeWindow() {
   composeWindow.webContents.on('dom-ready', () => {
     composeWindow.webContents.insertCSS(readInjectCss()).catch(() => {});
   });
+
+  // Auto-close the popup once the post actually goes through, instead of
+  // making the user close it themselves. X's own "Post" button click isn't
+  // a reliable signal (the request could still fail), so this watches for a
+  // successful response from the CreateTweet GraphQL call the click
+  // triggers — the same call regardless of X's DOM/build, unlike watching
+  // for a redirect or a UI toast that could change without notice.
+  const ses = composeWindow.webContents.session;
+  const onPostCompleted = (details) => {
+    if (details.statusCode >= 200 && details.statusCode < 300) {
+      if (composeWindow && !composeWindow.isDestroyed()) composeWindow.close();
+    }
+  };
+  ses.webRequest.onCompleted({ urls: ['https://x.com/i/api/graphql/*/CreateTweet*'] }, onPostCompleted);
+
   composeWindow.on('closed', () => {
+    ses.webRequest.onCompleted(null);
     composeWindow = null;
   });
 }
