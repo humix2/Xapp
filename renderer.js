@@ -9,6 +9,9 @@ composeBtn.addEventListener('click', () => window.xdeck.openCompose());
 
 const DEFAULT_ZOOM = 1;
 const DEFAULT_REFRESH_MS = 180000; // 3分
+const DEFAULT_WIDTH = 380;
+const MIN_WIDTH = 280;
+const MAX_WIDTH = 900;
 const ZOOM_OPTIONS = [0.8, 0.9, 1, 1.1, 1.25, 1.5];
 const REFRESH_OPTIONS = [
   [0, 'オフ'],
@@ -166,6 +169,9 @@ function createColumnElement(col) {
   const wrap = document.createElement('div');
   wrap.className = 'column';
   wrap.dataset.id = col.id;
+  const initialWidth = col.width ?? DEFAULT_WIDTH;
+  wrap.style.width = `${initialWidth}px`;
+  wrap.style.flexBasis = `${initialWidth}px`;
 
   const webview = document.createElement('webview');
   webview.className = 'col-webview';
@@ -271,7 +277,45 @@ function createColumnElement(col) {
   webview.addEventListener('did-navigate', reinject);
   webview.addEventListener('did-navigate-in-page', reinject);
 
-  wrap.append(header, settingsPanel, webview);
+  const body = document.createElement('div');
+  body.className = 'column-body';
+  body.append(header, settingsPanel, webview);
+
+  // A dedicated sibling strip rather than an overlay on the webview: a
+  // <webview> is its own embedded view and swallows pointer events for
+  // anything drawn on top of it, so a resize handle positioned over its
+  // edge wouldn't reliably receive the drag. Pointer-events are also
+  // disabled on every webview for the duration of the drag, in case the
+  // mouse crosses over one while resizing.
+  const resizeHandle = document.createElement('div');
+  resizeHandle.className = 'col-resize-handle';
+  resizeHandle.title = 'ドラッグして幅を変更';
+  resizeHandle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = wrap.getBoundingClientRect().width;
+    const webviews = document.querySelectorAll('.col-webview');
+    webviews.forEach((wv) => { wv.style.pointerEvents = 'none'; });
+    resizeHandle.classList.add('resizing');
+
+    const onMove = (ev) => {
+      const next = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startWidth + (ev.clientX - startX)));
+      wrap.style.width = `${next}px`;
+      wrap.style.flexBasis = `${next}px`;
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      webviews.forEach((wv) => { wv.style.pointerEvents = ''; });
+      resizeHandle.classList.remove('resizing');
+      col.width = Math.round(wrap.getBoundingClientRect().width);
+      persist();
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+
+  wrap.append(body, resizeHandle);
   wrap._webview = webview;
   wrap._col = col;
   scheduleColumnRefresh(wrap, col);
@@ -309,6 +353,7 @@ function addColumn(partial) {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     zoom: DEFAULT_ZOOM,
     refreshMs: DEFAULT_REFRESH_MS,
+    width: DEFAULT_WIDTH,
     ...partial,
   };
   columns.push(col);
