@@ -124,18 +124,21 @@ function buildSearchUrl(query, sort, operators) {
 function buildColumnUrl(col) {
   if (col.type === 'trends') return 'https://x.com/explore/tabs/trending';
   if (col.type === 'home') return 'https://x.com/home';
+  if (col.type === 'notifications') return 'https://x.com/notifications';
   return buildSearchUrl(col.query, col.sort, col.operators);
 }
 
 function columnTitle(col) {
   if (col.type === 'trends') return 'トレンド';
   if (col.type === 'home') return 'ホーム';
+  if (col.type === 'notifications') return '通知';
   return col.query;
 }
 
 function columnHomeTooltip(col) {
   if (col.type === 'trends') return 'トレンドに戻る';
   if (col.type === 'home') return 'ホームに戻る';
+  if (col.type === 'notifications') return '通知に戻る';
   return '検索トップに戻る';
 }
 
