@@ -27,8 +27,26 @@ html, body {
 
 #add-column-form {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   flex: 1;
+}
+
+#search-operators {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.operator-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #8b98a5;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
 #query-input {

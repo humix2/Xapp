@@ -3,6 +3,7 @@ const form = document.getElementById('add-column-form');
 const typeSelect = document.getElementById('type-select');
 const queryInput = document.getElementById('query-input');
 const sortSelect = document.getElementById('sort-select');
+const searchOperatorsEl = document.getElementById('search-operators');
 const composeBtn = document.getElementById('compose-btn');
 
 composeBtn.addEventListener('click', () => window.xdeck.openCompose());
@@ -19,6 +20,16 @@ const REFRESH_OPTIONS = [
   [180000, '3分'],
   [300000, '5分'],
   [600000, '10分'],
+];
+
+// Checked ones get appended to the query text sent to X's q= param. Kept to
+// a short, boolean-toggle-only list (no from:/since:/min_faves: etc., which
+// need a value input rather than a checkbox) so the UI doesn't get crowded.
+const OPERATOR_OPTIONS = [
+  ['lang:ja', '日本語', '日本語の投稿のみ (lang:ja)'],
+  ['filter:media', 'メディア', '画像/動画付きの投稿のみ (filter:media)'],
+  ['-filter:retweets', 'RT除外', 'リツイートを除外 (-filter:retweets)'],
+  ['-filter:replies', '返信除外', '返信を除外 (-filter:replies)'],
 ];
 
 // Search/explore/trends pages and the home timeline all render their tab bar
@@ -101,9 +112,10 @@ let columns = [];
 let dragSrcId = null;
 const cssKeys = new WeakMap(); // webview -> last inserted CSS key
 
-function buildSearchUrl(query, sort) {
+function buildSearchUrl(query, sort, operators) {
+  const fullQuery = [query, ...(operators || [])].join(' ').trim();
   const params = new URLSearchParams();
-  params.set('q', query);
+  params.set('q', fullQuery);
   params.set('src', 'typed_query');
   if (sort === 'live') params.set('f', 'live');
   return `https://x.com/search?${params.toString()}`;
@@ -112,7 +124,7 @@ function buildSearchUrl(query, sort) {
 function buildColumnUrl(col) {
   if (col.type === 'trends') return 'https://x.com/explore/tabs/trending';
   if (col.type === 'home') return 'https://x.com/home';
-  return buildSearchUrl(col.query, col.sort);
+  return buildSearchUrl(col.query, col.sort, col.operators);
 }
 
 function columnTitle(col) {
@@ -409,10 +421,22 @@ function reorderColumn(srcId, targetId) {
   }
 }
 
+const operatorCheckboxes = OPERATOR_OPTIONS.map(([opStr, shortLabel, title]) => {
+  const label = document.createElement('label');
+  label.className = 'operator-toggle';
+  label.title = title;
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  label.append(checkbox, document.createTextNode(shortLabel));
+  searchOperatorsEl.appendChild(label);
+  return { opStr, checkbox };
+});
+
 function updateFormForType() {
   const needsQuery = typeSelect.value === 'search';
   queryInput.style.display = needsQuery ? '' : 'none';
   sortSelect.style.display = needsQuery ? '' : 'none';
+  searchOperatorsEl.style.display = needsQuery ? '' : 'none';
   queryInput.required = needsQuery;
 }
 
@@ -427,8 +451,10 @@ form.addEventListener('submit', (e) => {
   }
   const q = queryInput.value.trim();
   if (!q) return;
-  addColumn({ type: 'search', query: q, sort: sortSelect.value });
+  const operators = operatorCheckboxes.filter((o) => o.checkbox.checked).map((o) => o.opStr);
+  addColumn({ type: 'search', query: q, sort: sortSelect.value, operators });
   queryInput.value = '';
+  operatorCheckboxes.forEach((o) => { o.checkbox.checked = false; });
 });
 
 async function init() {
