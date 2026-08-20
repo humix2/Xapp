@@ -194,7 +194,13 @@ function openComposeWindow() {
     }
     const isPostLike = /Tweet/i.test(details.url) && details.method === 'POST';
     if (isPostLike && details.statusCode >= 200 && details.statusCode < 300) {
-      if (composeWindow && !composeWindow.isDestroyed()) composeWindow.close();
+      // destroy(), not close(): a real post confirmed via CreateTweet 200 in
+      // the debug log still left the window open with close(), most likely
+      // X's own beforeunload handler intercepting it (a "leave site?"
+      // prompt the user didn't notice/dismiss). destroy() skips
+      // beforeunload/unload entirely — appropriate here since we only ever
+      // call it after confirming the post already succeeded.
+      if (composeWindow && !composeWindow.isDestroyed()) composeWindow.destroy();
     }
   };
   ses.webRequest.onCompleted({ urls }, onGraphqlCompleted);
