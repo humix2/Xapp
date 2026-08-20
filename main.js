@@ -76,6 +76,16 @@ function interceptExternalNavigation(_event, contents) {
       // Not a parseable absolute URL; leave navigation alone.
     }
   });
+
+  // No visible DevTools button in the column header (it's rarely needed day
+  // to day), but F12 still opens it for whichever column's webview has
+  // focus — needed for the inject.css maintenance workflow (inspecting an
+  // element to find its current selector after X changes its markup).
+  contents.on('before-input-event', (_e, input) => {
+    if (input.type === 'keyDown' && input.key === 'F12') {
+      contents.toggleDevTools();
+    }
+  });
 }
 
 let composeWindow = null;

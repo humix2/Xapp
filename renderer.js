@@ -252,14 +252,37 @@ function createColumnElement(col) {
 
   settingsPanel.append(zoomLabel, refreshLabel);
 
+  if (!col.type || col.type === 'search') {
+    if (!col.operators) col.operators = [];
+    const opsWrap = document.createElement('div');
+    opsWrap.className = 'column-settings-operators';
+    for (const [opStr, shortLabel, opTitle] of OPERATOR_OPTIONS) {
+      const opLabel = document.createElement('label');
+      opLabel.className = 'operator-toggle';
+      opLabel.title = opTitle;
+      const opCheckbox = document.createElement('input');
+      opCheckbox.type = 'checkbox';
+      opCheckbox.checked = col.operators.includes(opStr);
+      opCheckbox.addEventListener('change', () => {
+        col.operators = opCheckbox.checked
+          ? [...col.operators, opStr]
+          : col.operators.filter((o) => o !== opStr);
+        persist();
+        webview.loadURL(buildColumnUrl(col));
+      });
+      opLabel.append(opCheckbox, document.createTextNode(shortLabel));
+      opsWrap.appendChild(opLabel);
+    }
+    settingsPanel.appendChild(opsWrap);
+  }
+
   const btns = document.createElement('div');
   btns.className = 'column-buttons';
   btns.append(
     mkBtn('⌂', columnHomeTooltip(col), () => webview.loadURL(buildColumnUrl(col))),
     mkBtn('←', '戻る', () => { if (webview.canGoBack()) webview.goBack(); }),
     mkBtn('⟳', '更新', () => webview.reload()),
-    mkBtn('⚙', 'カラム設定（文字サイズ・自動更新）', () => { settingsPanel.hidden = !settingsPanel.hidden; }),
-    mkBtn('🔍', 'DevTools（要素検証・CSS調整用）', () => webview.openDevTools()),
+    mkBtn('⚙', 'カラム設定（文字サイズ・自動更新・検索演算子）', () => { settingsPanel.hidden = !settingsPanel.hidden; }),
     mkBtn('✕', 'カラム削除', () => removeColumn(col.id)),
   );
 
