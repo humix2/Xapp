@@ -15,7 +15,7 @@ html, body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 12px;
+  padding: 8px 140px 8px 12px;
   background: #1e2732;
   border-bottom: 1px solid #38444d;
   -webkit-app-region: drag;
