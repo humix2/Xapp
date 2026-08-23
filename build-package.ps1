@@ -24,7 +24,10 @@ if (-not (Test-Path $exePath)) {
 }
 
 New-Item -ItemType Directory -Force $appDir | Out-Null
-$files = @('main.js', 'preload.js', 'index.html', 'renderer.js', 'styles.css', 'inject.css', 'package.json')
+$files = @(
+  'main.js', 'preload.js', 'index.html', 'renderer.js', 'styles.css', 'inject.css', 'package.json',
+  'webview-preload.js', 'image-viewer-preload.js', 'image-viewer.html', 'image-viewer.css', 'image-viewer.js'
+)
 foreach ($f in $files) {
   Copy-Item -Path (Join-Path $src $f) -Destination (Join-Path $appDir $f) -Force
 }

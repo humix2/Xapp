@@ -66,14 +66,52 @@ function ensureTabSelectedJS(regexSource) {
 // X shows a "新しいポストがあります" (new posts available) button above the
 // timeline — the same one its own "." keyboard shortcut activates — that
 // inserts new posts in place without a page navigation. Clicking it instead
-// of webview.reload() for the periodic auto-refresh avoids the reload flash
-// and keeps scroll position when there's nothing new to show (X's own
-// button still jumps to top when there IS something new, same as it would
-// if the user triggered it themselves). Confirmed via testing: no
-// did-navigate fires and the URL is unchanged.
+// of webview.reload() for both the periodic auto-refresh and the manual
+// diff-update button avoids the reload flash and keeps scroll position when
+// there's nothing new to show. Confirmed via testing: no did-navigate fires
+// and the URL is unchanged.
+//
+// X's own button jumps the viewport to the top when there IS something new
+// (same as if the user clicked it themselves), which is exactly the
+// scroll-loss problem this feature exists to avoid — so after triggering
+// the click we measure how much content it prepended and add that amount
+// back onto the previous scrollTop, landing the viewport on the same posts
+// the user was already reading. The MutationObserver catches the insert as
+// soon as React renders it; the extra setTimeout passes re-assert the
+// position for a beat afterward to win against X's own scroll-to-top
+// animation, then everything is torn down so it stops fighting the user's
+// own subsequent scrolling.
+// Hiding chrome (tab bar, header rows, etc.) via CSS after the page has
+// already started laying out can trigger Chromium's scroll anchoring: it
+// tries to keep the same content under the viewport when something above it
+// shrinks away, which nudges scrollTop off 0 by a small amount. Re-asserted
+// a few times after CSS injection on a fresh page load (not on in-page SPA
+// navigation, where X's own scroll-to-top for the new view should stand).
+const FORCE_SCROLL_TOP_JS = `(() => {
+  const scroller = document.scrollingElement || document.documentElement;
+  scroller.scrollTop = 0;
+})();`;
+
 const CLICK_NEW_POSTS_JS = `(() => {
   const btn = document.querySelector('[aria-label*="新しいポスト"], [aria-label*="new post" i]');
-  if (btn) btn.click();
+  if (!btn) return;
+  const scroller = document.scrollingElement || document.documentElement;
+  const beforeTop = scroller.scrollTop;
+  const beforeHeight = scroller.scrollHeight;
+  btn.click();
+  let settled = false;
+  const restore = () => {
+    if (settled) return;
+    const delta = scroller.scrollHeight - beforeHeight;
+    if (delta > 0) {
+      scroller.scrollTop = beforeTop + delta;
+      settled = true;
+    }
+  };
+  const observer = new MutationObserver(restore);
+  observer.observe(document.body, { childList: true, subtree: true });
+  [0, 50, 150, 300, 600].forEach((ms) => setTimeout(restore, ms));
+  setTimeout(() => observer.disconnect(), 800);
 })();`;
 
 // Hides posts matching any filter predicate, and keeps re-checking as more
@@ -125,6 +163,7 @@ const POST_FILTER_JS = `(() => {
 let injectCss = '';
 let columns = [];
 let dragSrcId = null;
+let webviewPreloadPath = '';
 const cssKeys = new WeakMap(); // webview -> last inserted CSS key
 
 function buildSearchUrl(query, sort, operators) {
@@ -239,6 +278,12 @@ function createColumnElement(col) {
   webview.setAttribute('src', buildColumnUrl(col));
   webview.setAttribute('partition', 'persist:xsession');
   webview.setAttribute('allowpopups', 'true');
+  webview.setAttribute('preload', webviewPreloadPath);
+  webview.addEventListener('ipc-message', (event) => {
+    if (event.channel !== 'xdeck-image-click') return;
+    const { urls, startIndex } = event.args[0];
+    window.xdeck.openImageViewer(urls, startIndex);
+  });
 
   const header = document.createElement('div');
   header.className = 'column-header';
@@ -356,7 +401,8 @@ function createColumnElement(col) {
   btns.append(
     mkBtn('⌂', columnHomeTooltip(col), () => webview.loadURL(buildColumnUrl(col))),
     mkBtn('←', '戻る', () => { if (webview.canGoBack()) webview.goBack(); }),
-    mkBtn('⟳', '更新', () => webview.reload()),
+    mkBtn('⟲', '差分更新（新着のみ反映・先頭にジャンプせずスクロール位置を維持）', () => webview.executeJavaScript(CLICK_NEW_POSTS_JS).catch(() => {})),
+    mkBtn('⟳', '更新（ページ全体を再読み込み）', () => webview.reload()),
     mkBtn('⚙', 'カラム設定（文字サイズ・自動更新・並び替え/表示・検索演算子）', () => { settingsPanel.hidden = !settingsPanel.hidden; }),
     mkBtn('✕', 'カラム削除', () => removeColumn(col.id)),
   );
@@ -391,14 +437,19 @@ function createColumnElement(col) {
   });
 
 
-  const reinject = () => {
+  const reinject = (isFullNavigation) => {
     applyCss(webview, col);
     webview.executeJavaScript(POST_FILTER_JS).catch(() => {});
     if (col.type === 'home') webview.executeJavaScript(ensureTabSelectedJS(homeFeedOption(col)[2])).catch(() => {});
+    if (isFullNavigation) {
+      [0, 50, 150, 300].forEach((ms) => {
+        setTimeout(() => webview.executeJavaScript(FORCE_SCROLL_TOP_JS).catch(() => {}), ms);
+      });
+    }
   };
-  webview.addEventListener('dom-ready', reinject);
-  webview.addEventListener('did-navigate', reinject);
-  webview.addEventListener('did-navigate-in-page', reinject);
+  webview.addEventListener('dom-ready', () => reinject(true));
+  webview.addEventListener('did-navigate', () => reinject(true));
+  webview.addEventListener('did-navigate-in-page', () => reinject(false));
 
   const body = document.createElement('div');
   body.className = 'column-body';
@@ -556,6 +607,7 @@ form.addEventListener('submit', (e) => {
 });
 
 async function init() {
+  webviewPreloadPath = await window.xdeck.getWebviewPreloadPath();
   injectCss = await window.xdeck.getInjectCss();
   window.xdeck.onInjectCssUpdated((css) => {
     injectCss = css;

@@ -19,9 +19,14 @@ div[data-testid="BottomBar"] { display: none !important; }
 a[data-testid="SideNav_NewTweet_Button"],
 a[href="/compose/post"] { display: none !important; }
 
-/* "Trends for you" / promoted module sometimes embedded above the timeline */
-aside[aria-label*="Timeline: Trending"],
-div[aria-label*="Trending"] { display: none !important; }
+/* "Trends for you" / promoted module sometimes embedded above the timeline.
+   Scoped to pages that also contain real tweets (body:has(article)) so this
+   doesn't also wipe the standalone Explore > Trending page — that page
+   reuses the same "Timeline: Trending" aria-label for its actual (sole)
+   content, and since trend rows aren't <article> elements, an unscoped
+   match here hides the whole page instead of just the embedded widget. */
+body:has(article) aside[aria-label*="Timeline: Trending"],
+body:has(article) div[aria-label*="Trending"] { display: none !important; }
 
 /* X's own search box (search/explore page header). The app's toolbar already
    provides search input, so each column should show results only. */
@@ -43,12 +48,51 @@ button[aria-label="Manage timeline"] {
   display: none !important;
 }
 
+/* Same leftover-empty-box problem as the settingsAppBar rule below: hiding
+   just the "タイムラインを管理" button above leaves its padded wrapper divs
+   in the layout as a visible empty box on the home timeline. Same bounded
+   :not(:has(article)) pattern to collapse the whole header without
+   touching the actual tweet list.
+   Guarded with body:has(article): the trends page (x.com/explore/tabs/
+   trending) has zero <article> elements anywhere on the whole page, so
+   :not(:has(article)) never finds a stopping point there and cascades all
+   the way to primaryColumn, blanking the whole page — confirmed live. The
+   body:has(article) prefix makes this rule a no-op on any page with no
+   tweets at all, same fix already applied to the "Trending" widget rule
+   above. */
+body:has(article) div[data-testid="primaryColumn"] div:has(button[aria-label="タイムラインを管理"]):not(:has(article)),
+body:has(article) div[data-testid="primaryColumn"] div:has(button[aria-label="Manage timeline"]):not(:has(article)) {
+  display: none !important;
+}
+
+/* Page header (e.g. "通知" heading + its settings-gear link on the
+   Notifications page) — redundant since the app's own column header already
+   shows the title. Hiding just the title row left an empty box behind (its
+   padded wrapper divs stayed in the layout), so this instead hides the
+   whole header using the same bounded pattern as the tab-bar-wrapper rule
+   below: :not(:has(article)) walks up from the settings link through each
+   empty wrapper, matching them all (harmless — nesting display:none inside
+   display:none is a no-op), and stops automatically once it reaches an
+   ancestor whose subtree also includes the actual notification list (which
+   does contain <article> elements), so the real content is never touched.
+   Guarded with body:has(article) for the same reason as the rule above —
+   the trends page has zero <article> elements anywhere, so without this
+   guard the match cascades all the way to primaryColumn and blanks the
+   whole page (it also has a settingsAppBar-style link somewhere). */
+body:has(article) div[data-testid="primaryColumn"] div:has(a[data-testid="settingsAppBar"]):not(:has(article)) {
+  display: none !important;
+}
+
 /* Hiding the tab bar and the button above leaves their shared wrapper row
    behind as an empty ~54px strip (it still has its own padding/border).
-   Hide that whole row instead — it's confirmed to contain no <article>
-   (tweet), so the timeline itself is never matched. */
+   Hide that whole row instead. Bounded to the tablist's direct parent and
+   grandparent (not an open-ended descendant combinator): the trends page
+   (x.com/explore/tabs/trending) has zero <article> elements anywhere, since
+   trend rows aren't articles, so an unbounded ":not(:has(article))" match
+   never hits a stopping point and cascades all the way up to
+   primaryColumn — blanking the whole page instead of just the tab-bar row. */
 div[data-testid="primaryColumn"] div:has(> div[role="tablist"][data-testid="ScrollSnap-List"]):not(:has(article)),
-div[data-testid="primaryColumn"] div:has(div[role="tablist"][data-testid="ScrollSnap-List"]):not(:has(article)) {
+div[data-testid="primaryColumn"] div:has(> div > div[role="tablist"][data-testid="ScrollSnap-List"]):not(:has(article)) {
   display: none !important;
 }
 
@@ -73,6 +117,14 @@ div[data-testid="primaryColumn"] {
 div[data-testid="primaryColumn"] > div {
   max-width: 100% !important;
 }
+
+/* NOTE: tried hiding the "グローバルトレンド" hero card above the ranked
+   trend list via a CSS rule scoped to its cellInnerDiv (translateY(0px)
+   slot in that page's virtualized list) — confirmed live to break the list
+   badly (huge scroll jump, blank column). Each row's position is computed
+   by X's own virtualization based on measured heights; forcing one to
+   height 0 via display:none desyncs that math. Don't hide virtualized-list
+   cells with CSS — leave the hero card alone. */
 
 /* Match the app's dark chrome so column edges don't flash white while loading */
 html, body, #react-root {

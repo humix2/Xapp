@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, shell, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { pathToFileURL } = require('url');
 
 const configPath = path.join(app.getPath('userData'), 'columns.json');
 const windowStatePath = path.join(app.getPath('userData'), 'window-state.json');
@@ -217,6 +218,40 @@ function openComposeWindow() {
   });
 }
 
+let imageViewerWindow = null;
+
+function openImageViewer(urls, startIndex) {
+  if (!Array.isArray(urls) || urls.length === 0) return;
+
+  if (imageViewerWindow && !imageViewerWindow.isDestroyed()) {
+    imageViewerWindow.webContents.send('image-viewer:data', { urls, startIndex });
+    imageViewerWindow.focus();
+    return;
+  }
+
+  const workArea = screen.getPrimaryDisplay().workArea;
+  imageViewerWindow = new BrowserWindow({
+    width: Math.round(workArea.width * 0.8),
+    height: Math.round(workArea.height * 0.85),
+    backgroundColor: '#000000',
+    parent: mainWindow,
+    title: '画像',
+    webPreferences: {
+      preload: path.join(__dirname, 'image-viewer-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  imageViewerWindow.setMenuBarVisibility(false);
+  imageViewerWindow.loadFile('image-viewer.html');
+  imageViewerWindow.webContents.on('did-finish-load', () => {
+    imageViewerWindow.webContents.send('image-viewer:data', { urls, startIndex });
+  });
+  imageViewerWindow.on('closed', () => {
+    imageViewerWindow = null;
+  });
+}
+
 app.whenReady().then(() => {
   createWindow();
   app.on('web-contents-created', interceptExternalNavigation);
@@ -245,3 +280,5 @@ ipcMain.handle('columns:save', (_evt, columns) => {
 });
 ipcMain.handle('inject-css:get', () => readInjectCss());
 ipcMain.handle('compose:open', () => openComposeWindow());
+ipcMain.handle('image-viewer:open', (_evt, { urls, startIndex }) => openImageViewer(urls, startIndex));
+ipcMain.handle('webview-preload-path:get', () => pathToFileURL(path.join(__dirname, 'webview-preload.js')).toString());
