@@ -41,3 +41,28 @@ document.addEventListener('click', (event) => {
   event.stopPropagation();
   ipcRenderer.sendToHost('xdeck-image-click', { urls, startIndex });
 }, true);
+
+// X renders every #hashtag in tweet text as <a href="/hashtag/foo?src=hashtag_click">.
+// Left to navigate normally, it would replace the clicking column's own
+// content with the search results, silently turning "the column I was
+// reading" into "a hashtag search", which is confusing since search columns
+// otherwise only appear where the user explicitly asked for one. Intercepting
+// it here lets the host (renderer.js) open the search as a new column next to
+// this one instead, leaving this column's own content untouched.
+document.addEventListener('click', (event) => {
+  const link = event.target.closest && event.target.closest('a[href*="/hashtag/"]');
+  if (!link) return;
+
+  let url;
+  try {
+    url = new URL(link.getAttribute('href'), location.href);
+  } catch {
+    return;
+  }
+  const match = url.pathname.match(/^\/hashtag\/([^/]+)/);
+  if (!match) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  ipcRenderer.sendToHost('xdeck-hashtag-click', { query: `#${decodeURIComponent(match[1])}` });
+}, true);

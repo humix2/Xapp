@@ -289,9 +289,13 @@ function createColumnElement(col) {
   webview.setAttribute('allowpopups', 'true');
   webview.setAttribute('preload', webviewPreloadPath);
   webview.addEventListener('ipc-message', (event) => {
-    if (event.channel !== 'xdeck-image-click') return;
-    const { urls, startIndex } = event.args[0];
-    window.xdeck.openImageViewer(urls, startIndex);
+    if (event.channel === 'xdeck-image-click') {
+      const { urls, startIndex } = event.args[0];
+      window.xdeck.openImageViewer(urls, startIndex);
+    } else if (event.channel === 'xdeck-hashtag-click') {
+      const { query } = event.args[0];
+      insertColumnAfter(col.id, { type: 'search', query, sort: 'live', operators: [] });
+    }
   });
 
   const header = document.createElement('div');
@@ -531,20 +535,47 @@ function persist() {
   window.xdeck.saveColumns(columns);
 }
 
-function addColumn(partial) {
-  const col = {
+function makeColumn(partial) {
+  return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     zoom: DEFAULT_ZOOM,
     refreshMs: DEFAULT_REFRESH_MS,
     width: DEFAULT_WIDTH,
     ...partial,
   };
+}
+
+function addColumn(partial) {
+  const col = makeColumn(partial);
   columns.push(col);
   persist();
   if (columns.length === 1) {
     renderAll();
   } else {
     columnsEl.appendChild(createColumnElement(col));
+  }
+}
+
+// Used for columns opened as a side-effect of an action inside another
+// column (e.g. clicking a hashtag) — placed immediately to that column's
+// right rather than at the far end of the deck, so it's obvious which
+// column the search came from instead of getting lost among unrelated ones.
+function insertColumnAfter(afterId, partial) {
+  const col = makeColumn(partial);
+  const index = columns.findIndex((c) => c.id === afterId);
+  if (index === -1) {
+    columns.push(col);
+  } else {
+    columns.splice(index + 1, 0, col);
+  }
+  persist();
+
+  const afterEl = columnsEl.querySelector(`.column[data-id="${afterId}"]`);
+  const newEl = createColumnElement(col);
+  if (afterEl) {
+    afterEl.after(newEl);
+  } else {
+    columnsEl.appendChild(newEl);
   }
 }
 
