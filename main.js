@@ -3,6 +3,25 @@ const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
 
+// A second instance (e.g. launched from another virtual desktop) would open
+// its own set of <webview>s against the same persist:xsession partition —
+// two processes fighting over the same session storage at once, which has
+// been observed to leave every column stuck on X's loading screen (an
+// Arkose bot-challenge iframe failing to render, likely from X treating the
+// resulting traffic as suspicious). Bail out immediately and just focus the
+// existing window instead of letting a second instance start at all.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
+
 const configPath = path.join(app.getPath('userData'), 'columns.json');
 const windowStatePath = path.join(app.getPath('userData'), 'window-state.json');
 const injectCssPath = path.join(__dirname, 'inject.css');
