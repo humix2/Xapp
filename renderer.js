@@ -40,7 +40,16 @@ const OPERATOR_OPTIONS = [
 // via ensureTabSelectedJS below, and search columns get their ソート select
 // exposed there too (rebuilding the URL with f=live instead of a tab click,
 // since that's how X's search itself distinguishes 話題のポスト/最新).
-const TAB_BAR_HIDE_CSS = 'div[role="tablist"][data-testid="ScrollSnap-List"] { display: none !important; }';
+//
+// Tweets with several photos (confirmed via DevTools outerHTML) render them
+// as a swipeable carousel that reuses this exact same
+// role="tablist"/data-testid="ScrollSnap-List" component, so the unscoped
+// rule was also hiding every multi-photo tweet's images — single-photo
+// tweets use a different markup and were unaffected, which is why it only
+// ever looked like "some" images were missing. A real tab bar's items are
+// `<a role="tab">`; the photo carousel's are `<div role="presentation">`,
+// so requiring a [role="tab"] child excludes the carousel.
+const TAB_BAR_HIDE_CSS = 'div[role="tablist"][data-testid="ScrollSnap-List"]:has([role="tab"]) { display: none !important; }';
 
 const HOME_FEED_OPTIONS = [
   ['following', 'フォロー中', 'フォロー中|Following'],

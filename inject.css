@@ -90,9 +90,15 @@ body:has(article) div[data-testid="primaryColumn"] div:has(a[data-testid="settin
    (x.com/explore/tabs/trending) has zero <article> elements anywhere, since
    trend rows aren't articles, so an unbounded ":not(:has(article))" match
    never hits a stopping point and cascades all the way up to
-   primaryColumn — blanking the whole page instead of just the tab-bar row. */
-div[data-testid="primaryColumn"] div:has(> div[role="tablist"][data-testid="ScrollSnap-List"]):not(:has(article)),
-div[data-testid="primaryColumn"] div:has(> div > div[role="tablist"][data-testid="ScrollSnap-List"]):not(:has(article)) {
+   primaryColumn — blanking the whole page instead of just the tab-bar row.
+   Also requires a [role="tab"] child (same reasoning as TAB_BAR_HIDE_CSS in
+   renderer.js): multi-photo tweets render their photo carousel with this
+   same tablist/ScrollSnap-List markup but role="presentation" items, and
+   without this guard their wrapper divs (which also contain no <article>)
+   were being hidden here too — confirmed live, multi-photo tweets' images
+   were disappearing while single-photo tweets were unaffected. */
+div[data-testid="primaryColumn"] div:has(> div[role="tablist"][data-testid="ScrollSnap-List"]:has([role="tab"])):not(:has(article)),
+div[data-testid="primaryColumn"] div:has(> div > div[role="tablist"][data-testid="ScrollSnap-List"]:has([role="tab"])):not(:has(article)) {
   display: none !important;
 }
 
