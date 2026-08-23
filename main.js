@@ -125,6 +125,23 @@ function createWindow() {
 
 const ALLOWED_HOSTNAME = /(?:^|\.)(x|twitter)\.com$/i;
 
+// url here comes from whatever the webview's page content contains (tweet
+// text, DMs, profile bios, ...) — effectively attacker-controlled, since any
+// X user can post a link. shell.openExternal hands the URL to the OS, which
+// on Windows resolves it through whatever program is registered for its
+// scheme; a non-http(s) scheme could reach a third-party protocol handler
+// with known argument-injection bugs from nothing more than a click. Electron's
+// own security guidance is explicit about this: never call openExternal with
+// untrusted content. Restricting to http(s) keeps this to "open in the
+// default browser", which is all this is meant to do anyway.
+function isSafeExternalUrl(url) {
+  try {
+    return /^https?:$/i.test(new URL(url).protocol);
+  } catch {
+    return false;
+  }
+}
+
 // Every link a user could click should either stay inside XDeck (only if
 // it's still x.com/twitter.com) or open in the OS's default browser — never
 // spawn a new Electron window. The <webview> tag's 'new-window' DOM event is
@@ -141,7 +158,7 @@ const ALLOWED_HOSTNAME = /(?:^|\.)(x|twitter)\.com$/i;
 // guest and the compose popup window.
 function interceptExternalNavigation(_event, contents) {
   contents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    if (isSafeExternalUrl(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
 
@@ -149,7 +166,7 @@ function interceptExternalNavigation(_event, contents) {
     try {
       if (!ALLOWED_HOSTNAME.test(new URL(url).hostname)) {
         event.preventDefault();
-        shell.openExternal(url);
+        if (isSafeExternalUrl(url)) shell.openExternal(url);
       }
     } catch {
       // Not a parseable absolute URL; leave navigation alone.
