@@ -13,4 +13,5 @@ contextBridge.exposeInMainWorld('xdeck', {
   // is built in the main process, which has full Node access, and fetched
   // over IPC instead of computed here.
   getWebviewPreloadPath: () => ipcRenderer.invoke('webview-preload-path:get'),
+  logUnexpectedReload: (info) => ipcRenderer.invoke('debug:log-unexpected-reload', info),
 });

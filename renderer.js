@@ -101,9 +101,40 @@ const FORCE_SCROLL_TOP_JS = `(() => {
   scroller.scrollTop = 0;
 })();`;
 
+// Manual scroll-to-top/bottom buttons (⤒/⤓ in the column toolbar).
+const SCROLL_TO_TOP_JS = `(() => {
+  const scroller = document.scrollingElement || document.documentElement;
+  scroller.scrollTo({ top: 0, behavior: 'smooth' });
+})();`;
+
+const SCROLL_TO_BOTTOM_JS = `(() => {
+  const scroller = document.scrollingElement || document.documentElement;
+  scroller.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' });
+})();`;
+
+// The exact wording of X's own button has changed over time (seen as both
+// "新しいポストがあります" and a bare count like "20件のポストを表示" with
+// no "新しい"/"new" in it at all), so matching only on that substring can
+// silently stop finding it whenever X tweaks the copy — the manual button
+// then does nothing and there's no feedback that detection failed. Broadened
+// to also match a leading-number "N posts"/"N件の...ポスト" pattern, and to
+// log via console.debug (visible via the per-column F12 DevTools mentioned
+// in TODO.md) whether a candidate was found at all, so a future wording
+// change is diagnosable instead of just "the button does nothing".
 const CLICK_NEW_POSTS_JS = `(() => {
-  const btn = document.querySelector('[aria-label*="新しいポスト"], [aria-label*="new post" i]');
-  if (!btn) return;
+  const WORDED_RE = /新しい.{0,4}ポスト|new posts?/i;
+  const COUNT_RE = /^\\d[\\d,]*\\s*(件の)?\\s*(新しい)?\\s*(ポスト|post)/i;
+  const scope = document.querySelector('[data-testid="primaryColumn"]') || document.body;
+  const candidates = Array.from(scope.querySelectorAll('[role="button"], a, button'));
+  const btn = candidates.find((el) => {
+    const label = (el.getAttribute('aria-label') || el.textContent || '').trim();
+    return label && (WORDED_RE.test(label) || COUNT_RE.test(label));
+  });
+  if (!btn) {
+    console.debug('[xdeck] diff-update: no new-posts control found');
+    return;
+  }
+  console.debug('[xdeck] diff-update: clicking', btn.getAttribute('aria-label') || btn.textContent);
   const scroller = document.scrollingElement || document.documentElement;
   const beforeTop = scroller.scrollTop;
   const beforeHeight = scroller.scrollHeight;
@@ -265,6 +296,33 @@ function buildStringSelect(className, options, selectedValue, onChange) {
   return select;
 }
 
+// Electron's <webview> preload script (webview-preload.js — the photo/hashtag
+// click interception and autoplay-blocking) occasionally fails to actually
+// attach on a given navigation: confirmed live, on an otherwise-unmodified
+// build, across restarts of the same app with no code changes in between —
+// photo clicks and hashtag clicks both silently fall back to X's default
+// behavior, with no console error anywhere to explain why. Root cause wasn't
+// pinned down (a <webview> guest-process init race is the leading suspect,
+// not anything specific to this app's code), so this is a defensive
+// self-heal instead of a real fix: webview-preload.js pings back over IPC
+// once it's fully loaded and registered every listener; if that ping hasn't
+// arrived a couple seconds after dom-ready, assume injection failed and
+// reload the column once to get a fresh attempt. Capped at 2 retries per
+// navigation so a genuinely broken case (not just one-off flakiness) doesn't
+// reload forever.
+function ensurePreloadInjected(wrap, webview) {
+  const attemptId = (wrap._preloadAttempt = (wrap._preloadAttempt ?? 0) + 1);
+  wrap._preloadReady = false;
+  wrap._preloadRetryCount = wrap._preloadRetryCount ?? 0;
+  setTimeout(() => {
+    if (wrap._preloadReady || wrap._preloadAttempt !== attemptId) return;
+    if (wrap._preloadRetryCount >= 2) return;
+    wrap._preloadRetryCount += 1;
+    wrap._expectingNav = true;
+    webview.reload();
+  }, 2000);
+}
+
 function scheduleColumnRefresh(wrap, col) {
   if (wrap._refreshTimer) clearInterval(wrap._refreshTimer);
   const ms = col.refreshMs ?? DEFAULT_REFRESH_MS;
@@ -282,6 +340,16 @@ function createColumnElement(col) {
   wrap.style.width = `${initialWidth}px`;
   wrap.style.flexBasis = `${initialWidth}px`;
 
+  // Set right before every navigation XDeck itself initiates (⌂/⟳ buttons,
+  // sort/operator changes, the initial load below) and cleared again at the
+  // end of the did-navigate handler further down. If did-navigate ever fires
+  // while this is still false, nothing XDeck did caused it — X's own JS (a
+  // "." refresh, a forced reload after a version bump, etc.) navigated the
+  // page on its own, which gets reported to main.js's reload-debug.log for
+  // diagnosing "why did this column reload" reports that don't trace back to
+  // a button click.
+  wrap._expectingNav = true;
+
   const webview = document.createElement('webview');
   webview.className = 'col-webview';
   webview.setAttribute('src', buildColumnUrl(col));
@@ -295,6 +363,8 @@ function createColumnElement(col) {
     } else if (event.channel === 'xdeck-hashtag-click') {
       const { query } = event.args[0];
       insertColumnAfter(col.id, { type: 'search', query, sort: 'live', operators: [] });
+    } else if (event.channel === 'xdeck-preload-ready') {
+      wrap._preloadReady = true;
     }
   });
 
@@ -362,6 +432,7 @@ function createColumnElement(col) {
         col.sort = value;
         persist();
         updateTitle();
+        wrap._expectingNav = true;
         webview.loadURL(buildColumnUrl(col));
       },
     );
@@ -383,6 +454,7 @@ function createColumnElement(col) {
           ? [...col.operators, opStr]
           : col.operators.filter((o) => o !== opStr);
         persist();
+        wrap._expectingNav = true;
         webview.loadURL(buildColumnUrl(col));
       });
       opLabel.append(opCheckbox, document.createTextNode(shortLabel));
@@ -412,10 +484,12 @@ function createColumnElement(col) {
   const btns = document.createElement('div');
   btns.className = 'column-buttons';
   btns.append(
-    mkBtn('⌂', columnHomeTooltip(col), () => webview.loadURL(buildColumnUrl(col))),
-    mkBtn('←', '戻る', () => { if (webview.canGoBack()) webview.goBack(); }),
+    mkBtn('⌂', columnHomeTooltip(col), () => { wrap._expectingNav = true; webview.loadURL(buildColumnUrl(col)); }),
+    mkBtn('←', '戻る', () => { if (webview.canGoBack()) { wrap._expectingNav = true; webview.goBack(); } }),
+    mkBtn('⤒', '一番上へスクロール', () => webview.executeJavaScript(SCROLL_TO_TOP_JS).catch(() => {})),
+    mkBtn('⤓', '一番下へスクロール', () => webview.executeJavaScript(SCROLL_TO_BOTTOM_JS).catch(() => {})),
     mkBtn('⟲', '差分更新（新着のみ反映・先頭にジャンプせずスクロール位置を維持）', () => webview.executeJavaScript(CLICK_NEW_POSTS_JS).catch(() => {})),
-    mkBtn('⟳', '更新（ページ全体を再読み込み）', () => webview.reload()),
+    mkBtn('⟳', '更新（ページ全体を再読み込み）', () => { wrap._expectingNav = true; webview.reload(); }),
     mkBtn('⚙', 'カラム設定（文字サイズ・自動更新・並び替え/表示・検索演算子）', () => { settingsPanel.hidden = !settingsPanel.hidden; }),
     mkBtn('✕', 'カラム削除', () => removeColumn(col.id)),
   );
@@ -458,10 +532,17 @@ function createColumnElement(col) {
       [0, 50, 150, 300].forEach((ms) => {
         setTimeout(() => webview.executeJavaScript(FORCE_SCROLL_TOP_JS).catch(() => {}), ms);
       });
+      ensurePreloadInjected(wrap, webview);
     }
   };
   webview.addEventListener('dom-ready', () => reinject(true));
-  webview.addEventListener('did-navigate', () => reinject(true));
+  webview.addEventListener('did-navigate', () => {
+    if (!wrap._expectingNav) {
+      window.xdeck.logUnexpectedReload({ colId: col.id, colType: col.type || 'search', url: webview.getURL() }).catch(() => {});
+    }
+    wrap._expectingNav = false;
+    reinject(true);
+  });
   webview.addEventListener('did-navigate-in-page', () => reinject(false));
 
   const body = document.createElement('div');

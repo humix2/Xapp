@@ -1,7 +1,19 @@
-const { app, BrowserWindow, ipcMain, shell, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
+
+// Tried app.disableHardwareAcceleration() here to stop the GPU-process-crash
+// reloads (see reload-debug.log reasoning below) — reverted. It looked at
+// first like it broke every <webview> guest's preload script
+// (webview-preload.js), taking out the photo-click-opens-a-viewer-window and
+// hashtag-click-opens-a-new-column features at once, but that turned out to
+// be an unrelated, pre-existing intermittent bug in webview-preload.js itself
+// (see the comment there on the MutationObserver's observe() target) that
+// just happened to surface around the same time. disableHardwareAcceleration
+// is not confirmed to cause any regression — it just wasn't confirmed to fix
+// the GPU crash either before being reverted. Needs a narrower fix for the
+// GPU crash (see TODO.md).
 
 // A second instance (e.g. launched from another virtual desktop) would open
 // its own set of <webview>s against the same persist:xsession partition —
@@ -25,6 +37,39 @@ if (!gotSingleInstanceLock) {
 const configPath = path.join(app.getPath('userData'), 'columns.json');
 const windowStatePath = path.join(app.getPath('userData'), 'window-state.json');
 const injectCssPath = path.join(__dirname, 'inject.css');
+const reloadDebugLogPath = path.join(app.getPath('userData'), 'reload-debug.log');
+
+// Diagnostic trail for "a column (or several at once) went blank and came
+// back" reports — same reasoning as compose-debug.log below: this only
+// happens intermittently and isn't reproducible on demand, so the only way
+// to tell "a renderer process got killed under memory/CPU pressure while
+// scrolling" apart from "X's own JS called location.reload()" apart from
+// "the user clicked ⟳" is to have a timestamped record from all columns to
+// compare after the fact.
+function appendReloadDebugLog(line) {
+  try {
+    fs.appendFileSync(reloadDebugLogPath, `${new Date().toISOString()} ${line}\n`);
+  } catch {
+    // Best-effort debug log; never let this break the actual feature.
+  }
+}
+
+// Confirmed live: a reload report reproduced (scroll to the bottom of one
+// column repeatedly) with none of the per-column (render-process-gone,
+// unexpected did-navigate) or main-window did-navigate hooks above firing —
+// so whatever the user is seeing isn't a navigation or a renderer crash at
+// all. The next suspect is the GPU process: every column's images/video
+// frames are composited through it, so heavy image churn from one column's
+// infinite scroll could be enough to crash or exceed a limit in that single
+// shared process, which would blank and repaint the *entire* window (every
+// column at once, matching the report) with no navigation involved anywhere.
+// 'render-process-gone' above only covers page renderer processes, not this
+// one — app-level 'child-process-gone' is the general hook that also covers
+// the GPU process (and any utility/zygote process), so it's the one that can
+// actually confirm or rule this out.
+app.on('child-process-gone', (_event, details) => {
+  appendReloadDebugLog(`child-process-gone type=${details.type} reason=${details.reason} exitCode=${details.exitCode} name=${details.name || ''}`);
+});
 
 function loadColumns() {
   try {
@@ -108,6 +153,24 @@ function createWindow() {
   if (state?.isMaximized) mainWindow.maximize();
 
   mainWindow.setMenuBarVisibility(false);
+
+  // index.html is the entire app shell — every column lives inside it, so a
+  // navigation here (as opposed to a column's own <webview> reloading, a
+  // separate webContents handled per-column in renderer.js) means the whole
+  // app just got torn down and rebuilt from columns.json, which looks to the
+  // user like every column reloading at once. renderer.js's own
+  // reload-debug.log hooks can't see this happen because the reload wipes
+  // out the very JS state (and event listeners) those hooks live in before
+  // they'd get a chance to record anything — this has to be caught from the
+  // main process side, which survives the reload, instead.
+  let sawInitialLoad = false;
+  mainWindow.webContents.on('did-navigate', () => {
+    if (!sawInitialLoad) {
+      sawInitialLoad = true;
+      return;
+    }
+    appendReloadDebugLog(`main-window-reload (entire app shell reloaded, not just one column)`);
+  });
   mainWindow.loadFile('index.html');
 
   let saveTimer = null;
@@ -181,6 +244,16 @@ function interceptExternalNavigation(_event, contents) {
     if (input.type === 'keyDown' && input.key === 'F12') {
       contents.toggleDevTools();
     }
+  });
+
+  // A renderer process getting killed (OOM under system memory pressure,
+  // GPU crash, etc.) and a full page navigation look identical to the user —
+  // content goes blank and comes back — but have very different causes and
+  // fixes. Logging this side unambiguously identifies the "process actually
+  // died" case; see logUnexpectedReload below (called from renderer.js) for
+  // the "a navigation happened that XDeck itself didn't ask for" case.
+  contents.on('render-process-gone', (_e, details) => {
+    appendReloadDebugLog(`render-process-gone reason=${details.reason} url=${contents.getURL()}`);
   });
 }
 
@@ -289,6 +362,19 @@ function openImageViewer(urls, startIndex) {
 }
 
 app.whenReady().then(() => {
+  // setMenuBarVisibility(false) on the window only hides the menu *bar* —
+  // Electron's auto-generated default menu (and its accelerators: CmdOrCtrl+R
+  // reload, CmdOrCtrl+Shift+R force-reload, CmdOrCtrl+W close-window, ...)
+  // stays fully live underneath even with the bar hidden. CmdOrCtrl+R landing
+  // on the *main* window reloads index.html — the whole app shell every
+  // column lives in — which is indistinguishable from "every column reloaded
+  // at once" to the user, and a stray CmdOrCtrl+W would silently close the
+  // entire app. Removing the menu entirely removes those accelerators too;
+  // F12 DevTools (handled separately, per-column, in
+  // interceptExternalNavigation below) is unaffected since it doesn't go
+  // through the Menu at all.
+  Menu.setApplicationMenu(null);
+
   createWindow();
   app.on('web-contents-created', interceptExternalNavigation);
 
@@ -318,3 +404,6 @@ ipcMain.handle('inject-css:get', () => readInjectCss());
 ipcMain.handle('compose:open', () => openComposeWindow());
 ipcMain.handle('image-viewer:open', (_evt, { urls, startIndex }) => openImageViewer(urls, startIndex));
 ipcMain.handle('webview-preload-path:get', () => pathToFileURL(path.join(__dirname, 'webview-preload.js')).toString());
+ipcMain.handle('debug:log-unexpected-reload', (_evt, { colId, colType, url }) => {
+  appendReloadDebugLog(`unexpected-navigate col=${colId} type=${colType} url=${url}`);
+});
