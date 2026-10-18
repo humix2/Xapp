@@ -4,7 +4,7 @@
 // instead of X's built-in lightbox — which, inside a <webview>, is confined
 // to the column's own pixel width (280-900px) and is nearly useless in a
 // narrow column.
-const { ipcRenderer } = require('electron');
+const { ipcRenderer, webFrame } = require('electron');
 
 // X autoplays timeline videos (and GIF-as-mp4 loops) purely via scroll
 // position — an IntersectionObserver in X's own bundle starts them as they
@@ -27,12 +27,36 @@ const { ipcRenderer } = require('electron');
 // pause() unless it happened shortly after a real pointer/keyboard event;
 // and separately strip the `autoplay` attribute proactively so most videos
 // never even start in the first place.
+//
+// That pause-after-the-fact approach turned out to keep the CPU busy as long
+// as any video was on screen (and even after scrolling past it): X's player
+// immediately calls play() again after every pause, so each video sat in an
+// endless play → pause → seek-to-0 → re-decode loop. So the primary block now
+// happens one step earlier, by patching play() itself in the page's main
+// world via webFrame.executeJavaScript (which, unlike a plain prototype patch
+// from here, does reach X's bundle). A blocked call rejects with
+// NotAllowedError — exactly what Chromium's own autoplay policy returns — so
+// X treats it as "autoplay not allowed", shows its play button and stops
+// retrying, instead of fighting the pause. Gesture detection uses
+// navigator.userActivation (Chromium's own transient activation, ~5s after a
+// click/keypress), which wheel scrolling never grants. The 'play' listener
+// below stays as a fallback for anything that starts playback without going
+// through play().
+webFrame.executeJavaScript(`(() => {
+  const proto = HTMLMediaElement.prototype;
+  if (proto.__xdeckPlayGated) return;
+  Object.defineProperty(proto, '__xdeckPlayGated', { value: true });
+  const originalPlay = proto.play;
+  proto.play = function () {
+    if (navigator.userActivation && navigator.userActivation.isActive) {
+      return originalPlay.call(this);
+    }
+    return Promise.reject(new DOMException('Autoplay blocked by XDeck', 'NotAllowedError'));
+  };
+})();`).catch(() => {});
+
 (() => {
-  let lastInteractionAt = 0;
-  const markInteraction = () => { lastInteractionAt = Date.now(); };
-  document.addEventListener('pointerdown', markInteraction, true);
-  document.addEventListener('keydown', markInteraction, true);
-  const isUserInitiated = () => Date.now() - lastInteractionAt <= 1500;
+  const isUserInitiated = () => !!(navigator.userActivation && navigator.userActivation.isActive);
 
   // 'play' does not bubble, so this has to listen in the capture phase (which
   // still traverses down to the target regardless of the bubbles flag) on an

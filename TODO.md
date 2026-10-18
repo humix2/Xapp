@@ -18,6 +18,7 @@
 - [x] 投稿成功時にポップアップを自動で閉じる(`CreateTweet` GraphQL通信の成功[2xx]を`webRequest.onCompleted`で検知。実投稿で検知自体は成功していたが`close()`が効かない事例があり[Xの`beforeunload`が阻んでいる可能性]、`destroy()`に変更。実際の通信ログを`compose-debug.log`に記録する仕組みも追加)
 - [x] タイムライン上の広告(プロモーション投稿)を非表示(全カラム共通。`POST_FILTER_JS`のMutationObserverで無限スクロールにも追従)
 - [x] スクロールだけで動画/GIFが自動再生されるのを抑制(`webview-preload.js`。当初`HTMLMediaElement.prototype.play`をフックする案で実装したが、`<webview>`のpreloadはcontextIsolationのisolated worldで動くためXの本体スクリプト側には効かず無効だったことが判明。`play`イベントの監視+`pause()`呼び出しと`autoplay`属性の除去に変更[どちらもDOMイベント/共有DOM要素への直接操作なのでisolated worldをまたいで効く]。ユーザーが動画自体や再生ボタンをクリックした直後は再生される。副作用として、Xの自動再生ロジックが「止められた→再生し直す」を繰り返し、無音のまま少しずつ再生位置が進む[早送りされているように見える]症状が発生したため、`pause()`と同時に`currentTime = 0`へ巻き戻すよう変更し、繰り返されても先頭フレームで点滅するだけになるよう対応)
+- [x] 動画が画面にあるとCPU使用率が上がり続ける問題(上記の「再生→pause→巻き戻し→再デコード」の無限ループが原因と推定。`webFrame.executeJavaScript`でmain world側の`HTMLMediaElement.prototype.play`を差し替え、ユーザー操作直後[`navigator.userActivation.isActive`]以外は`NotAllowedError`で拒否する方式に変更。Chromium本来の自動再生ブロックと同じ応答なのでXは再生ボタン表示で諦める想定。`play`イベント監視は保険として残置。実機で改善を確認済み)
 - [x] ホーム上部の「タイムラインを管理」ボタンとその余白を非表示
 - [x] 外部リンク・カードのクリックはOSの既定ブラウザで開く(アプリ内に新規ウィンドウを作らない。`<webview>`の`new-window`イベントは非推奨かつpreventDefault()が効かなかったため、`webContents.setWindowOpenHandler`+`will-navigate`に切り替え)
 - [x] `shell.openExternal`に渡す前にURLのスキームを`http`/`https`のみに制限(セキュリティレビューで指摘。渡っていた`url`はwebview内のXコンテンツ由来で誰でも投稿できる=事実上外部から影響を受けうる入力のため、`file:`等の非http(s)スキームがOS側のプロトコルハンドラーに渡ることでの既知リスクパターンを回避)
