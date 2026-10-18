@@ -67,6 +67,21 @@ function homeFeedOption(col) {
   return HOME_FEED_OPTIONS.find(([k]) => k === key) || HOME_FEED_OPTIONS[0];
 }
 
+// 話題を検索 (Explore) tabs. Unlike the home feed, each tab has its own URL,
+// so switching is a loadURL rather than a tab click.
+const EXPLORE_TAB_OPTIONS = [
+  ['for-you', 'おすすめ'],
+  ['trending', 'トレンド'],
+  ['news', 'ニュース'],
+  ['sports', 'スポーツ'],
+  ['entertainment', 'エンタメ'],
+];
+
+function exploreTabOption(col) {
+  const key = col.exploreTab || 'for-you';
+  return EXPLORE_TAB_OPTIONS.find(([k]) => k === key) || EXPLORE_TAB_OPTIONS[0];
+}
+
 function ensureTabSelectedJS(regexSource) {
   return `(() => {
     const re = /${regexSource}/;
@@ -223,6 +238,7 @@ function buildSearchUrl(query, sort, operators) {
 
 function buildColumnUrl(col) {
   if (col.type === 'trends') return 'https://x.com/explore/tabs/trending';
+  if (col.type === 'explore') return `https://x.com/explore/tabs/${exploreTabOption(col)[0]}`;
   if (col.type === 'home') return 'https://x.com/home';
   if (col.type === 'notifications') return 'https://x.com/notifications';
   return buildSearchUrl(col.query, col.sort, col.operators);
@@ -230,6 +246,7 @@ function buildColumnUrl(col) {
 
 function columnTitle(col) {
   if (col.type === 'trends') return 'トレンド';
+  if (col.type === 'explore') return `話題を検索・${exploreTabOption(col)[1]}`;
   if (col.type === 'home') return `ホーム・${homeFeedOption(col)[1]}`;
   if (col.type === 'notifications') return '通知';
   return `${col.query}・${col.sort === 'top' ? '話題' : '最新'}`;
@@ -237,6 +254,7 @@ function columnTitle(col) {
 
 function columnHomeTooltip(col) {
   if (col.type === 'trends') return 'トレンドに戻る';
+  if (col.type === 'explore') return '話題を検索に戻る';
   if (col.type === 'home') return 'ホームに戻る';
   if (col.type === 'notifications') return '通知に戻る';
   return '検索トップに戻る';
@@ -487,6 +505,25 @@ function createColumnElement(col) {
     settingsPanel.appendChild(feedLabel);
   }
 
+  if (col.type === 'explore') {
+    const tabLabel = document.createElement('label');
+    tabLabel.textContent = '表示';
+    const tabSel = buildStringSelect(
+      'col-explore-tab-select',
+      EXPLORE_TAB_OPTIONS,
+      exploreTabOption(col)[0],
+      (value) => {
+        col.exploreTab = value;
+        persist();
+        updateTitle();
+        wrap._expectingNav = true;
+        webview.loadURL(buildColumnUrl(col));
+      },
+    );
+    tabLabel.appendChild(tabSel);
+    settingsPanel.appendChild(tabLabel);
+  }
+
   const btns = document.createElement('div');
   btns.className = 'column-buttons';
   btns.append(
@@ -602,7 +639,7 @@ function showEmptyState() {
   empty.className = 'empty-state';
   empty.textContent =
     '上のフォームから検索キーワードを入力してカラムを追加してください（「ホーム」でフォロー中タイムライン、' +
-    '「トレンド」でX全体のトレンド一覧のカラムになります）。' +
+    '「話題を検索」でXの話題を検索（おすすめ）、「トレンド」でX全体のトレンド一覧のカラムになります）。' +
     '初回はいずれかのカラムでXにログインすると、セッションは全カラム・次回起動時にも共有されます。';
   columnsEl.appendChild(empty);
 }
