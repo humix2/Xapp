@@ -5,8 +5,14 @@ const queryInput = document.getElementById('query-input');
 const sortSelect = document.getElementById('sort-select');
 const searchOperatorsEl = document.getElementById('search-operators');
 const composeBtn = document.getElementById('compose-btn');
+const updateAllBtn = document.getElementById('update-all-btn');
 
 composeBtn.addEventListener('click', () => window.xdeck.openCompose());
+updateAllBtn.addEventListener('click', () => {
+  for (const wrap of columnsEl.children) {
+    wrap._webview && wrap._webview.executeJavaScript(CLICK_NEW_POSTS_JS).catch(() => {});
+  }
+});
 
 const DEFAULT_ZOOM = 1;
 const DEFAULT_REFRESH_MS = 180000; // 3分

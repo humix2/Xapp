@@ -79,7 +79,14 @@ html, body {
 
 #add-column-form button:hover { background: #1a8cd8; }
 
-#compose-btn {
+#toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+#update-all-btn, #compose-btn {
   padding: 6px 14px;
   border-radius: 6px;
   border: 1px solid #38444d;
@@ -90,7 +97,7 @@ html, body {
   white-space: nowrap;
 }
 
-#compose-btn:hover { background: #2c3640; }
+#update-all-btn:hover, #compose-btn:hover { background: #2c3640; }
 
 #columns {
   display: flex;
