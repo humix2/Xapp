@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, screen, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, Menu, webContents } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -406,4 +406,46 @@ ipcMain.handle('image-viewer:open', (_evt, { urls, startIndex }) => openImageVie
 ipcMain.handle('webview-preload-path:get', () => pathToFileURL(path.join(__dirname, 'webview-preload.js')).toString());
 ipcMain.handle('debug:log-unexpected-reload', (_evt, { colId, colType, url }) => {
   appendReloadDebugLog(`unexpected-navigate col=${colId} type=${colType} url=${url}`);
+});
+
+// X only checks for new posts while its page believes it has focus — confirmed
+// live: with the XDeck window in the background, scrolling a column never
+// triggered a timeline request; with DevTools-protocol focus emulation on, it
+// did every time. Faking it from inside the page (document.hasFocus override,
+// synthetic focus events) did not work. So the diff update turns focus
+// emulation on for the column's webview just while it runs.
+ipcMain.handle('webview:focus-emulation', async (evt, { webContentsId, enabled }) => {
+  const wc = webContents.fromId(webContentsId);
+  // Only this window's own <webview> guests.
+  if (!wc || wc.isDestroyed() || wc.hostWebContents !== evt.sender) return false;
+  try {
+    if (enabled) {
+      if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+      await wc.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
+    } else if (wc.debugger.isAttached()) {
+      await wc.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: false });
+      wc.debugger.detach();
+    }
+    return true;
+  } catch {
+    return false;
+  }
+});
+
+// Sends X's own "." (load new posts) shortcut as a real key event. Used by the
+// diff update when X has announced new posts but hasn't rendered its
+// "N 件のポストを表示" row yet — confirmed live that the row appears ~1.5s
+// after this. Needs the debugger attached by 'webview:focus-emulation' above.
+ipcMain.handle('webview:press-period', async (evt, { webContentsId }) => {
+  const wc = webContents.fromId(webContentsId);
+  if (!wc || wc.isDestroyed() || wc.hostWebContents !== evt.sender || !wc.debugger.isAttached()) return false;
+  const key = { key: '.', code: 'Period', text: '.', unmodifiedText: '.', windowsVirtualKeyCode: 190, nativeVirtualKeyCode: 190 };
+  try {
+    await wc.debugger.sendCommand('Input.dispatchKeyEvent', { type: 'keyDown', ...key });
+    await wc.debugger.sendCommand('Input.dispatchKeyEvent', { type: 'char', ...key });
+    await wc.debugger.sendCommand('Input.dispatchKeyEvent', { type: 'keyUp', ...key });
+    return true;
+  } catch {
+    return false;
+  }
 });

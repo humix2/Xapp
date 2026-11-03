@@ -8,10 +8,20 @@ const composeBtn = document.getElementById('compose-btn');
 const updateAllBtn = document.getElementById('update-all-btn');
 
 composeBtn.addEventListener('click', () => window.xdeck.openCompose());
-updateAllBtn.addEventListener('click', () => {
-  for (const wrap of columnsEl.children) {
-    wrap._webview && wrap._webview.executeJavaScript(CLICK_NEW_POSTS_JS).catch(() => {});
-  }
+updateAllBtn.addEventListener('click', async () => {
+  const label = '⟲ 全カラム更新';
+  updateAllBtn.disabled = true;
+  updateAllBtn.textContent = '⟲ 更新中…';
+  const wraps = Array.from(columnsEl.children).filter((w) => w._webview);
+  const results = await Promise.all(wraps.map((w) => runDiffUpdate(w)));
+  const withNew = results.filter((r) => r === 'clicked' || r === 'pending').length;
+  updateAllBtn.textContent = withNew
+    ? `✓ ${withNew}/${wraps.length} カラムに新着`
+    : `✓ 新着なし (${wraps.length} カラム確認)`;
+  setTimeout(() => {
+    updateAllBtn.textContent = label;
+    updateAllBtn.disabled = false;
+  }, 2500);
 });
 
 const DEFAULT_ZOOM = 1;
@@ -133,47 +143,294 @@ const SCROLL_TO_BOTTOM_JS = `(() => {
   scroller.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' });
 })();`;
 
-// The exact wording of X's own button has changed over time (seen as both
-// "新しいポストがあります" and a bare count like "20件のポストを表示" with
-// no "新しい"/"new" in it at all), so matching only on that substring can
-// silently stop finding it whenever X tweaks the copy — the manual button
-// then does nothing and there's no feedback that detection failed. Broadened
-// to also match a leading-number "N posts"/"N件の...ポスト" pattern, and to
-// log via console.debug (visible via the per-column F12 DevTools mentioned
-// in TODO.md) whether a candidate was found at all, so a future wording
-// change is diagnosable instead of just "the button does nothing".
-const CLICK_NEW_POSTS_JS = `(() => {
+// Diff update ("差分更新") — how X behaves, all confirmed live via the
+// DevTools protocol on 2026-11-03:
+//
+// - X only checks for new posts while the page believes it has focus. With
+//   XDeck in the background nothing ever triggered a timeline request, so
+//   runDiffUpdate turns on focus emulation for the column first (main.js).
+// - With focus, the check is triggered by the timeline being scrolled away
+//   for a moment and then arriving back at the very top (HomeLatestTimeline /
+//   SearchTimeline fires right then). Explicit scroll events are needed; a
+//   programmatic scrollTop change alone wasn't enough.
+// - X's floating pill <button aria-label="新しいポストがあります。…"> is always
+//   in the DOM (inside the sticky header inject.css hides). aria-hidden="true"
+//   means nothing new; the attribute disappears once new posts are pending.
+//   That is the "新着あり" signal. Clicking it does nothing useful though.
+// - What actually inserts the posts is the inline "N 件のポストを表示" row X
+//   puts in the first timeline cell. It often isn't rendered until X gets a
+//   "." key press (its own load-new-posts shortcut), sent from main.js as a
+//   real key event — after which the row appears within ~1.5s.
+//
+// So a diff update is two page scripts:
+//   'detect': scroll away → back to top → wait for X's request to finish →
+//             report 'clicked' (row was already there and got clicked),
+//             'pending' (new posts announced, row not there yet) or 'none'.
+//   'insert': (run while "." is sent) wait for the row and click it.
+// Both keep the reading position: the post at the top of the viewport is
+// remembered by its status URL and pinned back to the same on-screen offset
+// after the click (restoring by scrollHeight was unreliable because X
+// virtualizes the timeline), with X's own window.scrollTo muted meanwhile.
+function diffUpdateJS(phase) {
+  return `(async () => {
+  const PHASE = '${phase}';
   const WORDED_RE = /新しい.{0,4}ポスト|new posts?/i;
   const COUNT_RE = /^\\d[\\d,]*\\s*(件の)?\\s*(新しい)?\\s*(ポスト|post)/i;
-  const scope = document.querySelector('[data-testid="primaryColumn"]') || document.body;
-  const candidates = Array.from(scope.querySelectorAll('[role="button"], a, button'));
-  const btn = candidates.find((el) => {
-    const label = (el.getAttribute('aria-label') || el.textContent || '').trim();
-    return label && (WORDED_RE.test(label) || COUNT_RE.test(label));
-  });
-  if (!btn) {
-    console.debug('[xdeck] diff-update: no new-posts control found');
-    return;
-  }
-  console.debug('[xdeck] diff-update: clicking', btn.getAttribute('aria-label') || btn.textContent);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const labelOf = (el) => (el.getAttribute('aria-label') || el.textContent || '').trim();
+  const findRow = () => Array.from(document.querySelectorAll('[data-testid="cellInnerDiv"] [role="button"], [data-testid="cellInnerDiv"] button'))
+    .find((el) => {
+      if (el.closest('article')) return false;
+      const label = labelOf(el);
+      return label.length <= 40 && (COUNT_RE.test(label) || WORDED_RE.test(label));
+    });
+  const pendingSignal = () => Array.from(document.querySelectorAll('button[aria-label], [role="button"][aria-label]'))
+    .some((el) => !el.closest('article') && WORDED_RE.test(el.getAttribute('aria-label')) && el.getAttribute('aria-hidden') !== 'true');
+
   const scroller = document.scrollingElement || document.documentElement;
   const beforeTop = scroller.scrollTop;
   const beforeHeight = scroller.scrollHeight;
-  btn.click();
-  let settled = false;
-  const restore = () => {
-    if (settled) return;
-    const delta = scroller.scrollHeight - beforeHeight;
-    if (delta > 0) {
-      scroller.scrollTop = beforeTop + delta;
-      settled = true;
+  const permalinkOf = (article) => {
+    const t = article.querySelector('a[href*="/status/"] time');
+    const a = t && t.closest('a');
+    return a ? a.getAttribute('href') : null;
+  };
+  const anchor = (() => {
+    for (const art of document.querySelectorAll('article')) {
+      const r = art.getBoundingClientRect();
+      if (r.bottom <= 0) continue;
+      const href = permalinkOf(art);
+      if (href) return { href, top: r.top };
+    }
+    return null;
+  })();
+  const pin = () => {
+    const art = anchor && Array.from(document.querySelectorAll('article')).find((a) => permalinkOf(a) === anchor.href);
+    if (art) {
+      const diff = art.getBoundingClientRect().top - anchor.top;
+      if (Math.abs(diff) > 1) scroller.scrollTop += diff;
+    } else {
+      scroller.scrollTop = beforeTop + Math.max(0, scroller.scrollHeight - beforeHeight);
     }
   };
-  const observer = new MutationObserver(restore);
-  observer.observe(document.body, { childList: true, subtree: true });
-  [0, 50, 150, 300, 600].forEach((ms) => setTimeout(restore, ms));
-  setTimeout(() => observer.disconnect(), 800);
+  const origScrollTo = window.scrollTo;
+  const origScroll = window.scroll;
+  const muteScroll = () => { window.scrollTo = () => {}; window.scroll = () => {}; };
+  const unmuteScroll = () => { window.scrollTo = origScrollTo; window.scroll = origScroll; };
+
+  const clickAndPin = async (row) => {
+    const label = labelOf(row);
+    muteScroll();
+    try {
+      row.click();
+      pin();
+      const timer = setInterval(pin, 50);
+      // Held until the end so the caller's "更新中…" covers the pinning.
+      await sleep(1500);
+      clearInterval(timer);
+    } finally {
+      unmuteScroll();
+    }
+    pin();
+    return { result: 'clicked', label };
+  };
+
+  if (PHASE === 'insert') {
+    muteScroll();
+    let row = null;
+    try {
+      for (let w = 0; !row && w < 3000; w += 100) { await sleep(100); row = findRow(); }
+    } finally {
+      unmuteScroll();
+    }
+    if (row) return clickAndPin(row);
+    pin();
+    return { result: 'pending' };
+  }
+
+  // PHASE === 'detect'
+  // The pill also flips to "new posts" when the only new entry is an ad (seen
+  // live right after startup: pill un-hidden, nothing real to insert). So the
+  // decision is made from X's own response instead: count tweet /
+  // notification entries in it that aren't already shown in this column,
+  // ignoring promoted ones.
+  const shownIds = new Set(Array.from(document.querySelectorAll('article a[href*="/status/"]'))
+    .map((a) => (a.getAttribute('href').match(/\\/status\\/(\\d+)/) || [])[1]).filter(Boolean));
+  let newCount = 0;
+  const countNew = (text) => {
+    const seen = new Set();
+    for (const m of text.matchAll(/"entryId":"([^"]+)"/g)) {
+      const id = m[1];
+      if (id.includes('promoted') || seen.has(id)) continue;
+      seen.add(id);
+      const tweet = id.match(/(?:^|-)tweet-(\\d+)$/);
+      if (tweet && !shownIds.has(tweet[1])) newCount++;
+    }
+  };
+  // Notification entries can't be matched against what's on screen, so that
+  // page keeps using X's pill signal.
+  const countable = !location.pathname.startsWith('/notifications');
+  let row = findRow();
+  let fetchInfo = 'already-shown';
+  if (!row) {
+    let started = 0;
+    let finished = 0;
+    const OX = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function (m, u, ...rest) {
+      if (/graphql\\/[^/]+\\/\\w*(Timeline|Notifications|Search)/i.test(String(u))) {
+        started++;
+        this.addEventListener('loadend', () => {
+          finished++;
+          try {
+            const text = typeof this.response === 'string' ? this.response
+              : this.responseType === '' || this.responseType === 'text' ? this.responseText
+              : JSON.stringify(this.response);
+            countNew(text || '');
+          } catch { /* unreadable response: leave the count as is */ }
+        }, { once: true });
+      }
+      return OX.call(this, m, u, ...rest);
+    };
+    try {
+      scroller.scrollTop = beforeTop + 300;
+      window.dispatchEvent(new Event('scroll'));
+      for (let w = 0; !started && w < 1500; w += 100) await sleep(100);
+      scroller.scrollTop = 0;
+      window.dispatchEvent(new Event('scroll'));
+      for (let w = 0; !started && w < 2500; w += 100) await sleep(100);
+      if (started) {
+        for (let w = 0; finished < started && w < 5000; w += 100) await sleep(100);
+        // Give X a moment to insert the row if it does so on its own.
+        if (newCount || !countable) for (let w = 0; !(row = findRow()) && w < 1000; w += 100) await sleep(100);
+      }
+    } finally {
+      XMLHttpRequest.prototype.open = OX;
+    }
+    fetchInfo = started ? (finished >= started ? 'fetched' : 'fetch-pending') : 'no-fetch';
+    row = row || findRow();
+  }
+  if (row) return { ...(await clickAndPin(row)), fetchInfo, newCount };
+  scroller.scrollTop = beforeTop;
+  pin();
+  // The pill alone isn't trusted on timelines (ads trip it); only a counted
+  // response is. If X didn't fetch this time, nothing new is known.
+  const pending = countable ? fetchInfo === 'fetched' && newCount > 0 : pendingSignal();
+  return { result: pending ? 'pending' : 'none', fetchInfo, newCount };
 })();`;
+}
+
+// Runs a diff update on one column (see diffUpdateJS) and shows the result
+// next to the column title. Resolves to 'clicked' (new posts inserted),
+// 'pending' (X announced new posts but they couldn't be inserted), 'none' or
+// 'error'. Never does a full reload: that loses the reading position, and
+// reloading several search columns at once made X answer with
+// "問題が発生しました".
+function runDiffUpdate(wrap) {
+  if (!wrap._webview) return Promise.resolve('error');
+  // One update per column at a time (e.g. auto-refresh firing during a manual
+  // one) — two runs would fight over the scroll position.
+  if (wrap._updating) return wrap._updating;
+  showColumnUpdating(wrap);
+  const webview = wrap._webview;
+  let wcId = null;
+  try { wcId = webview.getWebContentsId(); } catch { /* not attached yet */ }
+
+  const run = async () => {
+    if (wcId) await window.xdeck.setWebviewFocusEmulation(wcId, true).catch(() => false);
+    try {
+      let res = await webview.executeJavaScript(diffUpdateJS('detect'));
+      if (res && res.result === 'pending' && wcId) {
+        // New posts announced but the "N 件のポストを表示" row isn't there yet:
+        // X's own "." shortcut makes it appear. Start waiting for the row
+        // first, then press the key.
+        const inserting = webview.executeJavaScript(diffUpdateJS('insert'));
+        await new Promise((r) => setTimeout(r, 100));
+        await window.xdeck.pressPeriodInWebview(wcId).catch(() => {});
+        const ins = await inserting;
+        res = { ...ins, fetchInfo: res.fetchInfo, newCount: res.newCount };
+      }
+      return res || { result: 'none' };
+    } finally {
+      if (wcId) await window.xdeck.setWebviewFocusEmulation(wcId, false).catch(() => {});
+    }
+  };
+
+  wrap._updating = run()
+    .catch(() => ({ result: 'error' }))
+    .then((res) => {
+      wrap._updating = null;
+      showColumnStatus(wrap, res.result, res.label, res.fetchInfo, res.newCount);
+      return res.result;
+    });
+  return wrap._updating;
+}
+
+function showColumnUpdating(wrap) {
+  const el = wrap._statusEl;
+  if (!el) return;
+  clearStatusSettle(wrap);
+  el.textContent = '更新中…';
+  el.dataset.result = 'updating';
+  el.classList.remove('flash');
+}
+
+const STATUS_TEXT = { clicked: '新着を反映', pending: '新着あり', none: '新着なし', error: '更新失敗' };
+
+function showColumnStatus(wrap, result, label, fetchInfo, newCount) {
+  const el = wrap._statusEl;
+  if (!el) return;
+  const now = new Date();
+  const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const count = newCount && (result === 'clicked' || result === 'pending') ? `(${newCount})` : '';
+  el.textContent = `${STATUS_TEXT[result]}${count} ${hhmm}`;
+  // Hover shows what was actually clicked, to diagnose wrong matches.
+  const FETCH_TEXT = {
+    fetched: 'Xに新着を問い合わせ済み',
+    'fetch-pending': 'Xへの問い合わせが時間内に終わらず',
+    'no-fetch': 'Xが新着を問い合わせなかった',
+  };
+  el.title = label
+    ? `最後の差分更新: 「${label}」をクリック`
+    : result === 'pending'
+    ? 'Xが新着ありと通知したが、取り込めなかった（⟲で再試行）'
+    : `最後の差分更新の結果${fetchInfo && FETCH_TEXT[fetchInfo] ? `（${FETCH_TEXT[fetchInfo]}）` : ''}`;
+  el.dataset.result = result;
+  // Re-trigger the flash animation even if the text didn't change.
+  el.classList.remove('flash');
+  void el.offsetWidth;
+  el.classList.add('flash');
+
+  // Afterwards the status settles into a muted "HH:MM 確認" so the last check
+  // time stays visible (e.g. to see auto-refresh is running):
+  // - 新着を反映: the inserted posts sit above the reading position, unseen,
+  //   so it stays until the user scrolls the column to the very top.
+  // - 新着なし: after a few seconds.
+  // - 新着あり / 更新失敗 need attention, so they stay.
+  clearStatusSettle(wrap);
+  const settle = () => {
+    clearStatusSettle(wrap);
+    el.textContent = `${hhmm} 確認`;
+    el.dataset.result = 'settled';
+  };
+  if (result === 'none') {
+    wrap._statusSettleTimer = setTimeout(settle, 5000);
+  } else if (result === 'clicked') {
+    wrap._statusSettleTimer = setInterval(() => {
+      if (!wrap._webview || wrap._updating) return;
+      wrap._webview.executeJavaScript('(document.scrollingElement || document.documentElement).scrollTop')
+        .then((top) => { if (top < 5) settle(); })
+        .catch(() => {});
+    }, 1000);
+  }
+}
+
+function clearStatusSettle(wrap) {
+  if (wrap._statusSettleTimer) {
+    clearTimeout(wrap._statusSettleTimer);
+    clearInterval(wrap._statusSettleTimer);
+    wrap._statusSettleTimer = null;
+  }
+}
 
 // Hides posts matching any filter predicate, and keeps re-checking as more
 // posts stream in via infinite scroll (a MutationObserver, since a one-time
@@ -351,9 +608,7 @@ function scheduleColumnRefresh(wrap, col) {
   if (wrap._refreshTimer) clearInterval(wrap._refreshTimer);
   const ms = col.refreshMs ?? DEFAULT_REFRESH_MS;
   if (!ms) return;
-  wrap._refreshTimer = setInterval(() => {
-    wrap._webview && wrap._webview.executeJavaScript(CLICK_NEW_POSTS_JS).catch(() => {});
-  }, ms);
+  wrap._refreshTimer = setInterval(() => runDiffUpdate(wrap), ms);
 }
 
 function createColumnElement(col) {
@@ -531,7 +786,7 @@ function createColumnElement(col) {
     mkBtn('←', '戻る', () => { if (webview.canGoBack()) { wrap._expectingNav = true; webview.goBack(); } }),
     mkBtn('⤒', '一番上へスクロール', () => webview.executeJavaScript(SCROLL_TO_TOP_JS).catch(() => {})),
     mkBtn('⤓', '一番下へスクロール', () => webview.executeJavaScript(SCROLL_TO_BOTTOM_JS).catch(() => {})),
-    mkBtn('⟲', '差分更新（新着のみ反映・先頭にジャンプせずスクロール位置を維持）', () => webview.executeJavaScript(CLICK_NEW_POSTS_JS).catch(() => {})),
+    mkBtn('⟲', '差分更新（新着のみ反映・スクロール位置を維持）', () => runDiffUpdate(wrap)),
     mkBtn('⟳', '更新（ページ全体を再読み込み）', () => { wrap._expectingNav = true; webview.reload(); }),
     mkBtn('⚙', 'カラム設定（文字サイズ・自動更新・並び替え/表示・検索演算子）', () => { settingsPanel.hidden = !settingsPanel.hidden; }),
     mkBtn('✕', 'カラム削除', () => removeColumn(col.id)),
@@ -539,7 +794,11 @@ function createColumnElement(col) {
 
   const titleGroup = document.createElement('div');
   titleGroup.className = 'column-title-group';
-  titleGroup.append(handle, title);
+  const statusEl = document.createElement('span');
+  statusEl.className = 'column-status';
+  statusEl.title = '最後の差分更新の結果';
+  wrap._statusEl = statusEl;
+  titleGroup.append(handle, title, statusEl);
 
   header.append(titleGroup, btns);
 
@@ -709,6 +968,7 @@ function removeColumn(id) {
   const el = columnsEl.querySelector(`.column[data-id="${id}"]`);
   if (el) {
     if (el._refreshTimer) clearInterval(el._refreshTimer);
+    clearStatusSettle(el);
     el.remove();
   }
   if (columns.length === 0) showEmptyState();

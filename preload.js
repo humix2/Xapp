@@ -14,4 +14,6 @@ contextBridge.exposeInMainWorld('xdeck', {
   // over IPC instead of computed here.
   getWebviewPreloadPath: () => ipcRenderer.invoke('webview-preload-path:get'),
   logUnexpectedReload: (info) => ipcRenderer.invoke('debug:log-unexpected-reload', info),
+  setWebviewFocusEmulation: (webContentsId, enabled) => ipcRenderer.invoke('webview:focus-emulation', { webContentsId, enabled }),
+  pressPeriodInWebview: (webContentsId) => ipcRenderer.invoke('webview:press-period', { webContentsId }),
 });
