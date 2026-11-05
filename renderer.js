@@ -257,6 +257,7 @@ function diffUpdateJS(phase) {
   const shownIds = new Set(Array.from(document.querySelectorAll('article a[href*="/status/"]'))
     .map((a) => (a.getAttribute('href').match(/\\/status\\/(\\d+)/) || [])[1]).filter(Boolean));
   let newCount = 0;
+  const newIds = [];
   const countNew = (text) => {
     const seen = new Set();
     for (const m of text.matchAll(/"entryId":"([^"]+)"/g)) {
@@ -264,7 +265,7 @@ function diffUpdateJS(phase) {
       if (id.includes('promoted') || seen.has(id)) continue;
       seen.add(id);
       const tweet = id.match(/(?:^|-)tweet-(\\d+)$/);
-      if (tweet && !shownIds.has(tweet[1])) newCount++;
+      if (tweet && !shownIds.has(tweet[1])) { newCount++; newIds.push(tweet[1]); }
     }
   };
   // Notification entries can't be matched against what's on screen, so that
@@ -315,7 +316,30 @@ function diffUpdateJS(phase) {
   // The pill alone isn't trusted on timelines (ads trip it); only a counted
   // response is. If X didn't fetch this time, nothing new is known.
   const pending = countable ? fetchInfo === 'fetched' && newCount > 0 : pendingSignal();
-  return { result: pending ? 'pending' : 'none', fetchInfo, newCount };
+  return { result: pending ? 'pending' : 'none', fetchInfo, newCount, newIds };
+})();`;
+}
+
+// Checks whether a "新着あり" column has caught up: the column is at the very
+// top and either every post the detect phase counted as new is now shown
+// (X inserted them itself, or the user clicked the row), or X shows neither
+// the "N 件のポストを表示" row nor the new-posts pill (nothing left to insert).
+function pendingSettledJS(newIds) {
+  return `(() => {
+  const scroller = document.scrollingElement || document.documentElement;
+  if (scroller.scrollTop >= 5) return false;
+  const ids = ${JSON.stringify(newIds || [])};
+  const shown = new Set(Array.from(document.querySelectorAll('article a[href*="/status/"]'))
+    .map((a) => (a.getAttribute('href').match(/\\/status\\/(\\d+)/) || [])[1]).filter(Boolean));
+  if (ids.length && ids.every((id) => shown.has(id))) return true;
+  const WORDED_RE = /新しい.{0,4}ポスト|new posts?/i;
+  const COUNT_RE = /^\\d[\\d,]*\\s*(件の)?\\s*(新しい)?\\s*(ポスト|post)/i;
+  const labelOf = (el) => (el.getAttribute('aria-label') || el.textContent || '').trim();
+  const row = Array.from(document.querySelectorAll('[data-testid="cellInnerDiv"] [role="button"], [data-testid="cellInnerDiv"] button'))
+    .some((el) => !el.closest('article') && labelOf(el).length <= 40 && (COUNT_RE.test(labelOf(el)) || WORDED_RE.test(labelOf(el))));
+  const pill = Array.from(document.querySelectorAll('button[aria-label], [role="button"][aria-label]'))
+    .some((el) => !el.closest('article') && WORDED_RE.test(el.getAttribute('aria-label')) && el.getAttribute('aria-hidden') !== 'true');
+  return !row && !pill;
 })();`;
 }
 
@@ -347,7 +371,7 @@ function runDiffUpdate(wrap) {
         await new Promise((r) => setTimeout(r, 100));
         await window.xdeck.pressPeriodInWebview(wcId).catch(() => {});
         const ins = await inserting;
-        res = { ...ins, fetchInfo: res.fetchInfo, newCount: res.newCount };
+        res = { ...ins, fetchInfo: res.fetchInfo, newCount: res.newCount, newIds: res.newIds };
       }
       return res || { result: 'none' };
     } finally {
@@ -359,7 +383,7 @@ function runDiffUpdate(wrap) {
     .catch(() => ({ result: 'error' }))
     .then((res) => {
       wrap._updating = null;
-      showColumnStatus(wrap, res.result, res.label, res.fetchInfo, res.newCount);
+      showColumnStatus(wrap, res.result, res.label, res.fetchInfo, res.newCount, res.newIds);
       return res.result;
     });
   return wrap._updating;
@@ -376,7 +400,7 @@ function showColumnUpdating(wrap) {
 
 const STATUS_TEXT = { clicked: '新着を反映', pending: '新着あり', none: '新着なし', error: '更新失敗' };
 
-function showColumnStatus(wrap, result, label, fetchInfo, newCount) {
+function showColumnStatus(wrap, result, label, fetchInfo, newCount, newIds) {
   const el = wrap._statusEl;
   if (!el) return;
   const now = new Date();
@@ -405,7 +429,8 @@ function showColumnStatus(wrap, result, label, fetchInfo, newCount) {
   // - 新着を反映: the inserted posts sit above the reading position, unseen,
   //   so it stays until the user scrolls the column to the very top.
   // - 新着なし: after a few seconds.
-  // - 新着あり / 更新失敗 need attention, so they stay.
+  // - 新着あり: once the column is at the top and caught up (pendingSettledJS).
+  // - 更新失敗 needs attention, so it stays.
   clearStatusSettle(wrap);
   const settle = () => {
     clearStatusSettle(wrap);
@@ -419,6 +444,14 @@ function showColumnStatus(wrap, result, label, fetchInfo, newCount) {
       if (!wrap._webview || wrap._updating) return;
       wrap._webview.executeJavaScript('(document.scrollingElement || document.documentElement).scrollTop')
         .then((top) => { if (top < 5) settle(); })
+        .catch(() => {});
+    }, 1000);
+  } else if (result === 'pending') {
+    const check = pendingSettledJS(newIds);
+    wrap._statusSettleTimer = setInterval(() => {
+      if (!wrap._webview || wrap._updating) return;
+      wrap._webview.executeJavaScript(check)
+        .then((done) => { if (done) settle(); })
         .catch(() => {});
     }, 1000);
   }
