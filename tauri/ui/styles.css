@@ -1,0 +1,276 @@
+/* Same look as the Electron version's styles.css, minus what isn't ported. */
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #15202b;
+  color: #e7e9ea;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overflow: hidden;
+}
+
+#toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 49px;
+  padding: 8px 12px;
+  background: #1e2732;
+  border-bottom: 1px solid #38444d;
+}
+
+#add-column-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+#query-input {
+  flex: 1;
+  max-width: 360px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #38444d;
+  background: #0f1720;
+  color: #e7e9ea;
+}
+
+#add-column-form select {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #38444d;
+  background: #0f1720;
+  color: #e7e9ea;
+}
+
+#add-column-form button {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: none;
+  background: #1d9bf0;
+  color: white;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+#add-column-form button:hover { background: #1a8cd8; }
+
+#toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.badge {
+  font-size: 11px;
+  color: #ffad1f;
+  border: 1px solid #ffad1f;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+#update-all-btn, #compose-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid #38444d;
+  background: transparent;
+  color: #e7e9ea;
+  cursor: pointer;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#update-all-btn:hover, #compose-btn:hover { background: #2c3640; }
+#update-all-btn:disabled { opacity: 0.8; cursor: default; }
+
+#columns {
+  display: flex;
+  align-items: stretch;
+  height: calc(100vh - 49px);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.empty-state {
+  margin: 48px auto;
+  max-width: 420px;
+  text-align: center;
+  color: #8b98a5;
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 0 16px;
+}
+
+#search-operators {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.operator-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #8b98a5;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.column {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  min-width: 0;
+}
+
+.column-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Between columns, in the shell (not under a webview), so it gets the drag. */
+.col-resize-handle {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  background: #38444d;
+  touch-action: none;
+}
+
+.col-resize-handle:hover,
+.col-resize-handle.resizing {
+  background: #1d9bf0;
+}
+
+.drag-handle {
+  cursor: grab;
+  color: #536471;
+  font-size: 13px;
+  line-height: 1;
+  user-select: none;
+  flex: 0 0 auto;
+  touch-action: none;
+}
+
+.drag-handle:active { cursor: grabbing; }
+
+.column.dragging .column-header { opacity: 0.4; }
+
+/* Shown on the header: the rest of the column is covered by its webview. */
+.column.drag-over .column-header {
+  box-shadow: inset 0 0 0 2px #1d9bf0;
+}
+
+.column-settings {
+  display: none;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 6px 10px;
+  background: #1c2733;
+  border-bottom: 1px solid #38444d;
+  font-size: 12px;
+  color: #8b98a5;
+  flex: 0 0 auto;
+}
+
+.column-settings:not([hidden]) { display: flex; }
+
+.column-settings label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.column-settings-operators {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  flex-basis: 100%;
+}
+
+.column-settings select {
+  background: #0f1720;
+  color: #e7e9ea;
+  border: 1px solid #38444d;
+  border-radius: 4px;
+  padding: 2px 4px;
+  font-size: 12px;
+}
+
+.column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: #1e2732;
+  border-bottom: 1px solid #38444d;
+  flex: 0 0 auto;
+}
+
+.column-title-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.column-title {
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
+.column-status {
+  font-size: 11px;
+  color: #8b98a5;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.column-status[data-result="clicked"] { color: #1d9bf0; }
+.column-status[data-result="error"] { color: #f4212e; }
+.column-status[data-result="pending"] { color: #ffd400; }
+.column-status[data-result="settled"] { color: #536471; }
+.column-status[data-result="updating"] { animation: column-status-pulse 1s ease-in-out infinite; }
+
+@keyframes column-status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.column-buttons { display: flex; gap: 2px; flex: 0 0 auto; }
+
+.column-buttons button {
+  background: transparent;
+  border: none;
+  color: #8b98a5;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.column-buttons button:hover { background: #2c3640; color: #e7e9ea; }
+
+/* The x.com webview is placed over this box by Rust (see layout.js). */
+.column-slot {
+  flex: 1 1 auto;
+  min-height: 0;
+  background: #15202b;
+}

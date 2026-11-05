@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "compose",
+  "description": "The compose window (x.com/compose/post): may only report that the post succeeded (page-scripts/on-load/compose-detect-post.js).",
+  "windows": ["compose"],
+  "remote": {
+    "urls": ["https://x.com/*", "https://twitter.com/*"]
+  },
+  "permissions": ["allow-compose-posted"]
+}

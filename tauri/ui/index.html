@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>XDeck (Tauri試作)</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="toolbar">
+    <form id="add-column-form">
+      <select id="type-select">
+        <option value="search">検索</option>
+        <option value="home">ホーム（フォロー中）</option>
+        <option value="notifications">通知</option>
+        <option value="explore">話題を検索</option>
+        <option value="trends">トレンド</option>
+      </select>
+      <input id="query-input" type="text" placeholder="検索キーワードを入力してカラム追加..." autocomplete="off" />
+      <select id="sort-select">
+        <option value="live">最新</option>
+        <option value="top">話題</option>
+      </select>
+      <div id="search-operators"></div>
+      <button type="submit">＋ カラム追加</button>
+    </form>
+    <div id="toolbar-actions">
+      <span class="badge" title="Rust + WebView2 で動いている試作版">Tauri試作</span>
+      <button id="update-all-btn" type="button" title="全カラムを差分更新（新着のみ反映・スクロール位置を維持）">⟲ 全カラム更新</button>
+      <button id="compose-btn" type="button">✎ ポストする</button>
+    </div>
+  </div>
+  <div id="columns"></div>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
