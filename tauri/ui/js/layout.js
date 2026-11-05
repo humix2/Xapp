@@ -36,6 +36,9 @@ export function unobserveSlot(slot) {
   resizeObserver.unobserve(slot);
 }
 
+// Called by Rust after a column leaves video fullscreen (fullscreen.rs).
+window.relayoutColumns = scheduleLayout;
+
 // Called by Rust (scroll_columns) for a horizontal wheel over a column's
 // x.com page, which the shell can't see directly. The scroll event then
 // moves the webviews via scheduleLayout.

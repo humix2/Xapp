@@ -81,6 +81,7 @@ tauri/
         ├── columns.rs       カラムごとの X 用 WebView の作成・配置・削除
         ├── image_viewer.rs  画像ビューアのウィンドウ（twimg の画像 URL だけ受け付ける）
         ├── compose.rs       ポストウィンドウ（投稿成功で自動で閉じる）
+        ├── fullscreen.rs    動画の全画面表示（そのカラムをウィンドウ全体に広げてフルスクリーンに）
         ├── navigation.rs    リンクをカラム内で開くか、ブラウザで開くか
         ├── page_scripts.rs  page-scripts/ の埋め込み
         ├── config.rs        columns.json の読み書き
@@ -100,6 +101,7 @@ tauri/
 | 投稿成功の検知 | `webRequest.onCompleted` で通信を外から監視 | ページ内で XHR/fetch を包んで検知（`compose-detect-post.js`） |
 | カラムの並べ替え・幅変更 | HTML のドラッグ＆ドロップ | X の画面の上ではドロップ先のイベントが来ないので、ポインターキャプチャ＋カラムの位置計算で判定（`drag.js`） |
 | 文字サイズ | `insertCSS` で毎回差し込み | 初期化スクリプト＋ localStorage に保存（X がページを再読み込みしても維持） |
+| 動画の全画面表示 | Electron がウィンドウ全体に広げる | WebView2 はカラムの枠内までしか広げないので、全画面の合図（`ContainsFullScreenElementChanged`）を受けて Rust が広げる（`fullscreen.rs`） |
 | カラム上の横ホイール | `<webview>` から外側に自然に伝わる | 別の WebView なので伝わらない → ページ内で拾って Rust 経由で外枠に渡す（`forward-horizontal-wheel.js`） |
 
 ## 移植していない機能

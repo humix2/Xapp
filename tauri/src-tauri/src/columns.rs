@@ -74,17 +74,35 @@ pub fn open(app: &AppHandle, id: &str, kind: &str, url: &str, bounds: Bounds, se
         builder = builder.initialization_script(script);
     }
 
-    window
+    let webview = window
         .add_child(
             builder,
             LogicalPosition::new(bounds.x, bounds.y),
             LogicalSize::new(bounds.width.max(1.0), bounds.height.max(1.0)),
         )
         .map_err(|e| e.to_string())?;
+
+    #[cfg(windows)]
+    {
+        let fs_app = app.clone();
+        let fs_id = id.to_string();
+        // Handed off to the async runtime: this fires inside a WebView2
+        // callback on the main thread.
+        crate::webview2::on_fullscreen_change(&webview, move |full| {
+            let app = fs_app.clone();
+            let id = fs_id.clone();
+            tauri::async_runtime::spawn(async move { crate::fullscreen::changed(&app, &id, full) });
+        })?;
+    }
+    #[cfg(not(windows))]
+    let _ = webview;
     Ok(())
 }
 
 pub fn set_bounds(app: &AppHandle, id: &str, bounds: Bounds) -> Result<(), String> {
+    if crate::fullscreen::bounds_override(app, id) {
+        return Ok(());
+    }
     let webview = get(app, id)?;
     webview
         .set_position(LogicalPosition::new(bounds.x, bounds.y))

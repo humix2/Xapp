@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex};
 use serde_json::{json, Value};
 use tauri::Webview;
 use tokio::sync::oneshot;
-use webview2_com::CallDevToolsProtocolMethodCompletedHandler;
-use windows::core::HSTRING;
+use webview2_com::{CallDevToolsProtocolMethodCompletedHandler, ContainsFullScreenElementChangedEventHandler};
+use windows::core::{BOOL, HSTRING};
 
 type Reply = oneshot::Sender<Result<String, String>>;
 
@@ -50,6 +50,32 @@ pub async fn call(webview: &Webview, method: &str, params: Value) -> Result<Valu
 
     let text = rx.await.map_err(|_| "CDP call dropped".to_string())??;
     serde_json::from_str(&text).map_err(|e| e.to_string())
+}
+
+/// Calls `f(true)` when the page enters fullscreen (e.g. a video's ⛶
+/// button) and `f(false)` when it leaves. WebView2 on its own only fills
+/// the webview's own bounds — here, one narrow column — and leaves growing
+/// it to the host, which Tauri doesn't do. `f` runs on the main thread
+/// inside WebView2's callback, so it should hand work off rather than
+/// call back into the webview directly.
+pub fn on_fullscreen_change(webview: &Webview, f: impl Fn(bool) + Send + 'static) -> Result<(), String> {
+    webview
+        .with_webview(move |platform| {
+            let _ = (|| -> windows::core::Result<()> {
+                let core = unsafe { platform.controller().CoreWebView2()? };
+                let handler = ContainsFullScreenElementChangedEventHandler::create(Box::new(move |sender, _| {
+                    if let Some(core) = sender {
+                        let mut full = BOOL::default();
+                        unsafe { core.ContainsFullScreenElement(&mut full)? };
+                        f(full.as_bool());
+                    }
+                    Ok(())
+                }));
+                let mut token = 0i64;
+                unsafe { core.add_ContainsFullScreenElementChanged(&handler, &mut token) }
+            })();
+        })
+        .map_err(|e| e.to_string())
 }
 
 /// Evaluates an expression in the page (main world), awaiting a returned

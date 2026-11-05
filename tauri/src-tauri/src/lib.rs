@@ -14,12 +14,14 @@
 //! - `config`        — columns.json load/save
 //! - `image_viewer`  — the photo viewer window
 //! - `compose`       — the "ポストする" window
+//! - `fullscreen`    — video fullscreen from a column
 //! - `webview2`      — WebView2 DevTools Protocol calls (Windows only)
 
 mod columns;
 mod commands;
 mod compose;
 mod config;
+mod fullscreen;
 mod image_viewer;
 mod navigation;
 mod page_scripts;
@@ -56,6 +58,7 @@ pub fn run() {
         // call the plugin, and its CSP blocks the IPC anyway), so external
         // links did nothing. Without it, those clicks reach on_new_window.
         .plugin(tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build())
+        .manage(fullscreen::State::default())
         .invoke_handler(tauri::generate_handler![
             commands::load_columns,
             commands::save_columns,
@@ -84,7 +87,7 @@ pub fn run() {
 
 fn create_main_window(app: &AppHandle) -> tauri::Result<()> {
     let window = WindowBuilder::new(app, MAIN_WINDOW_LABEL)
-        .title("XDeck (Tauri試作)")
+        .title("XDeck")
         .inner_size(1400.0, 900.0)
         .background_color(Color(0x15, 0x20, 0x2b, 0xff))
         .build()?;
