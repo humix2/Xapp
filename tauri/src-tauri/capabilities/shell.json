@@ -6,6 +6,10 @@
   "webviews": ["shell"],
   "permissions": [
     "core:default",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
     "allow-load-columns",
     "allow-save-columns",
     "allow-column-open",

@@ -41,6 +41,16 @@ pub fn column_close(app: AppHandle, id: String) -> Result<(), String> {
 /// All columns at once (sent on every layout change: resize, scroll, add/remove).
 #[tauri::command]
 pub fn column_set_bounds(app: AppHandle, bounds: Vec<ColumnBounds>) -> Result<(), String> {
+    // Minimizing shrinks the shell to 0×0, which would squash every column
+    // to 1px. X then drops all but one post from its timeline and doesn't
+    // redraw them when the window comes back, so leave the columns alone.
+    let minimized = app
+        .get_window(crate::MAIN_WINDOW_LABEL)
+        .and_then(|w| w.is_minimized().ok())
+        .unwrap_or(false);
+    if minimized {
+        return Ok(());
+    }
     for b in bounds {
         columns::set_bounds(&app, &b.id, b.bounds)?;
     }

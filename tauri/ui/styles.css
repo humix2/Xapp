@@ -78,6 +78,44 @@ html, body {
 }
 
 #update-all-btn:hover, #compose-btn:hover { background: #2c3640; }
+
+/* Minimize / maximize / close, in place of the OS title bar
+   (the window has no decorations; see lib.rs). Full toolbar height,
+   flush with the right edge, like Windows' own caption buttons. */
+#toolbar { padding-right: 0; }
+
+#window-controls {
+  display: flex;
+  align-self: stretch;
+  margin: -8px 0;
+  flex-shrink: 0;
+}
+
+#window-controls button {
+  width: 46px;
+  border: none;
+  background: transparent;
+  color: #e7e9ea;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+
+#window-controls svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+}
+
+#window-controls button:hover { background: #2c3640; }
+#win-close:hover { background: #c42b1c !important; color: #fff; }
+
+#win-max .icon-restore { display: none; }
+body.maximized #win-max .icon-max { display: none; }
+body.maximized #win-max .icon-restore { display: inline; }
 #update-all-btn:disabled { opacity: 0.8; cursor: default; }
 
 #columns {

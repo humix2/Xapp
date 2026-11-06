@@ -18,6 +18,9 @@ export function scheduleLayout() {
   scheduled = true;
   requestAnimationFrame(() => {
     scheduled = false;
+    // The shell is 0×0 while the window is minimized; sending that would
+    // squash every column (see column_set_bounds in commands.rs).
+    if (columnsEl.clientHeight === 0) return;
     const bounds = Array.from(columnsEl.querySelectorAll('.column'))
       .filter((el) => el._opened)
       .map((el) => ({ id: el.dataset.id, ...slotBounds(el._slot) }));

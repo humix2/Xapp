@@ -50,6 +50,12 @@ pub fn run() {
         .plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_denylist(&[image_viewer::LABEL, compose::LABEL])
+                // Not decorations: the main window is always frameless, and a
+                // saved "decorated" state would bring the OS title bar back.
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::all()
+                        & !tauri_plugin_window_state::StateFlags::DECORATIONS,
+                )
                 .build(),
         )
         // Used from Rust only (navigation.rs). Its default click interceptor
@@ -90,6 +96,10 @@ fn create_main_window(app: &AppHandle) -> tauri::Result<()> {
         .title("XDeck")
         .inner_size(1400.0, 900.0)
         .background_color(Color(0x15, 0x20, 0x2b, 0xff))
+        // No OS title bar, like the Electron version: the shell's toolbar is
+        // the title bar (drag area + its own minimize / maximize / close).
+        // Resizing from the edges and the drop shadow still work.
+        .decorations(false)
         .build()?;
 
     let size = window.inner_size()?.to_logical::<f64>(window.scale_factor()?);

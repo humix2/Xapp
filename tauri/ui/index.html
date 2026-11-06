@@ -27,8 +27,20 @@
       <button id="update-all-btn" type="button" title="全カラムを差分更新（新着のみ反映・スクロール位置を維持）">⟲ 全カラム更新</button>
       <button id="compose-btn" type="button">✎ ポストする</button>
     </div>
+    <div id="window-controls">
+      <button id="win-min" type="button" title="最小化" aria-label="最小化">
+        <svg viewBox="0 0 10 10"><path d="M0 5h10" /></svg>
+      </button>
+      <button id="win-max" type="button" title="最大化" aria-label="最大化">
+        <svg viewBox="0 0 10 10"><path class="icon-max" d="M0.5 0.5h9v9h-9z" /><path class="icon-restore" d="M2.5 0.5h7v7M0.5 2.5h7v7h-7z" /></svg>
+      </button>
+      <button id="win-close" type="button" title="閉じる" aria-label="閉じる">
+        <svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10" /></svg>
+      </button>
+    </div>
   </div>
   <div id="columns"></div>
+  <script type="module" src="js/window-controls.js"></script>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>
