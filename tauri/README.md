@@ -1,8 +1,10 @@
-# XDeck — Tauri 試作版
+# XDeck — Tauri 版
 
-Electron 版 XDeck（リポジトリ直下）を Tauri（Rust + WebView2）で作り直した**試作版**です。
-軽さ・使い勝手を Electron 版と比べるためのもので、機能は一部だけ移植しています。
+Electron 版 XDeck（リポジトリ直下）を Tauri（Rust + WebView2）で作り直したもので、現在はこちらがメインです。
+Electron 版の機能はすべて移植済みです（下の「移植していない機能」を除く）。
 Electron 版のファイルには手を入れていません。
+
+試作として始めたため、アプリの識別子（設定の保存先フォルダ名）は `com.xdeck.tauri-prototype` のままです。
 
 ## 動かし方
 
@@ -17,7 +19,7 @@ cargo build --release  # 配布用 → target/release/xdeck-tauri.exe
 - 初回起動時、Electron 版のカラム設定（`%APPDATA%\xdeck\columns.json`）をコピーして使います。
   以降は Tauri 版専用の設定（`%APPDATA%\com.xdeck.tauri-prototype\columns.json`）に保存します。
 - ログイン状態は Electron 版と共有されません。どれか 1 カラムで**ID/パスワードで**ログインしてください
-  （Google/Apple ログインは別ウィンドウを使うため、試作版では動きません）。
+  （Google/Apple ログインは別ウィンドウを使うため動きません）。
 - 開発用ビルドでは、カラムを右クリック →「検証」で開発者ツールを開けます。
 
 ## メモリ比較
@@ -47,6 +49,7 @@ tauri/
 │       ├── column-settings.js  ⚙ パネル（文字サイズ・自動更新・並び替え・検索演算子・表示）
 │       ├── drag.js          カラムのドラッグ並べ替え・幅変更
 │       ├── layout.js        カラムの位置を Rust に伝えて、X の画面を重ねる
+│       ├── window-controls.js  ツールバーをタイトルバー代わりに（移動・最小化・最大化・閉じる）
 │       └── diff-update.js   差分更新の手順と「新着あり」などの表示
 ├── page-scripts/        X のページの中で動かす JS（Rust がビルド時に埋め込む）
 │   ├── on-load/             ページを開くたびに自動で実行
@@ -102,6 +105,7 @@ tauri/
 | カラムの並べ替え・幅変更 | HTML のドラッグ＆ドロップ | X の画面の上ではドロップ先のイベントが来ないので、ポインターキャプチャ＋カラムの位置計算で判定（`drag.js`） |
 | 文字サイズ | `insertCSS` で毎回差し込み | 初期化スクリプト＋ localStorage に保存（X がページを再読み込みしても維持） |
 | 動画の全画面表示 | Electron がウィンドウ全体に広げる | WebView2 はカラムの枠内までしか広げないので、全画面の合図（`ContainsFullScreenElementChanged`）を受けて Rust が広げる（`fullscreen.rs`） |
+| ウィンドウ枠 | `titleBarStyle: 'hidden'` ＋ Windows 標準のボタンを重ねて表示 | 枠なしウィンドウ（`decorations(false)`）＋ 自前の ─ □ ✕ ボタン（`window-controls.js`）。Windows 11 のスナップレイアウトのメニューは出ない |
 | カラム上の横ホイール | `<webview>` から外側に自然に伝わる | 別の WebView なので伝わらない → ページ内で拾って Rust 経由で外枠に渡す（`forward-horizontal-wheel.js`） |
 
 ## 移植していない機能
